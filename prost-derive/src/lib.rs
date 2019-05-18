@@ -173,12 +173,25 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         quote!(f.debug_tuple(stringify!(#ident)))
     };
 
+    let tag_consts = fields.iter()
+        // Oneof is handled separately
+        .filter(|&(ref field_ident, ref field)| field.tags().len() == 1)
+        .map(|&(ref field_ident, ref field)| {
+            let tag_no = field.tags()[0];
+            quote!(pub const #field_ident: u32 = #tag_no;)
+        });
+
     let expanded = quote! {
         #[allow(non_snake_case, unused_attributes)]
-        mod #module {
+        pub mod #module {
             extern crate prost as _prost;
             extern crate bytes as _bytes;
             use super::*;
+
+
+            pub mod Tags {
+                #(#tag_consts)*
+            }
 
             impl _prost::Message for #ident {
                 #[allow(unused_variables)]
