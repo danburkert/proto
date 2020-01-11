@@ -148,3 +148,33 @@ impl From<Timestamp> for Result<time::SystemTime, time::Duration> {
         }
     }
 }
+
+#[cfg(feature = "serde_json")]
+impl From<serde_json::Value> for Value {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => Self {
+                kind: Some(value::Kind::NullValue(0)),
+            },
+            serde_json::Value::Bool(b) => Self {
+                kind: Some(value::Kind::BoolValue(b)),
+            },
+            serde_json::Value::Number(n) => Value {
+                kind: Some(value::Kind::NumberValue(n.as_f64().unwrap())),
+            },
+            serde_json::Value::String(s) => Self {
+                kind: Some(value::Kind::StringValue(s)),
+            },
+            serde_json::Value::Array(a) => Self {
+                kind: Some(value::Kind::ListValue(ListValue {
+                    values: a.into_iter().map(|val| val.into()).collect(),
+                })),
+            },
+            serde_json::Value::Object(map) => Self {
+                kind: Some(value::Kind::StructValue(Struct {
+                    fields: map.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                })),
+            },
+        }
+    }
+}

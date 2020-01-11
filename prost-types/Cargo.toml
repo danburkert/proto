@@ -17,3 +17,4 @@ test = false
 [dependencies]
 bytes = "0.5"
 prost = { version = "0.5.0", path = ".." }
+serde_json = { version = "1.0", optional = true }
