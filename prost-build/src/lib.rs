@@ -147,7 +147,7 @@ type Module = Vec<String>;
 pub trait ServiceGenerator {
     /// Generates a Rust interface or implementation for a service, writing the
     /// result to `buf`.
-    fn generate(&mut self, service: Service, buf: &mut String);
+    fn generate(&mut self, service: Service, descriptor_set: &Vec<FileDescriptorProto>, buf: &mut String);
 
     /// Finalizes the generation process.
     ///
@@ -162,7 +162,7 @@ pub trait ServiceGenerator {
     /// is called once per `.proto` file.
     ///
     /// The default implementation is empty and does nothing.
-    fn finalize(&mut self, _buf: &mut String) {}
+    fn finalize(&mut self, _descriptor_set: &Vec<FileDescriptorProto>, _buf: &mut String) {}
 
     /// Finalizes the generation process for an entire protobuf package.
     ///
@@ -581,7 +581,8 @@ impl Config {
         let extern_paths = ExternPaths::new(&self.extern_paths, self.prost_types)
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
 
-        for file in files {
+        for file in &files {
+            let file = file.clone();
             let module = self.module(&file);
 
             // Only record packages that have services
@@ -590,7 +591,7 @@ impl Config {
             }
 
             let mut buf = modules.entry(module).or_insert_with(String::new);
-            CodeGenerator::generate(self, &message_graph, &extern_paths, file, &mut buf);
+            CodeGenerator::generate(self, &message_graph, &extern_paths, file, &files, &mut buf);
         }
 
         if let Some(ref mut service_generator) = self.service_generator {
@@ -696,7 +697,7 @@ mod tests {
     /// service methods.
     struct ServiceTraitGenerator;
     impl ServiceGenerator for ServiceTraitGenerator {
-        fn generate(&mut self, service: Service, buf: &mut String) {
+        fn generate(&mut self, service: Service, _descriptor_set: &Vec<FileDescriptorProto>, buf: &mut String) {
             // Generate a trait for the service.
             service.comments.append_with_indent(0, buf);
             buf.push_str(&format!("trait {} {{\n", &service.name));
@@ -713,7 +714,7 @@ mod tests {
             // Close out the trait.
             buf.push_str("}\n");
         }
-        fn finalize(&mut self, buf: &mut String) {
+        fn finalize(&mut self, _descriptor_set: &Vec<FileDescriptorProto>, buf: &mut String) {
             // Needs to be present only once, no matter how many services there are
             buf.push_str("pub mod utils { }\n");
         }
@@ -739,12 +740,12 @@ mod tests {
     }
 
     impl ServiceGenerator for MockServiceGenerator {
-        fn generate(&mut self, service: Service, _buf: &mut String) {
+        fn generate(&mut self, service: Service, _descriptor_set: &Vec<FileDescriptorProto>, _buf: &mut String) {
             let mut state = self.state.borrow_mut();
             state.service_names.push(service.name.clone());
         }
 
-        fn finalize(&mut self, _buf: &mut String) {
+        fn finalize(&mut self, _descriptor_set: &Vec<FileDescriptorProto>, _buf: &mut String) {
             let mut state = self.state.borrow_mut();
             state.finalized += 1;
         }

@@ -44,6 +44,7 @@ impl<'a> CodeGenerator<'a> {
         message_graph: &MessageGraph,
         extern_paths: &ExternPaths,
         file: FileDescriptorProto,
+        descriptor_set: &Vec<FileDescriptorProto>,
         buf: &mut String,
     ) {
         let mut source_info = file
@@ -101,7 +102,7 @@ impl<'a> CodeGenerator<'a> {
             code_gen.path.push(6);
             for (idx, service) in file.service.into_iter().enumerate() {
                 code_gen.path.push(idx as i32);
-                code_gen.push_service(service);
+                code_gen.push_service(service, descriptor_set);
                 code_gen.path.pop();
             }
 
@@ -111,7 +112,7 @@ impl<'a> CodeGenerator<'a> {
                 .service_generator
                 .as_mut()
                 .map(|service_generator| {
-                    service_generator.finalize(buf);
+                    service_generator.finalize(&descriptor_set, buf);
                 });
 
             code_gen.path.pop();
@@ -627,7 +628,7 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str(",\n");
     }
 
-    fn push_service(&mut self, service: ServiceDescriptorProto) {
+    fn push_service(&mut self, service: ServiceDescriptorProto, descriptor_set: &Vec<FileDescriptorProto>) {
         let name = service.name().to_owned();
         debug!("  service: {:?}", name);
 
@@ -681,7 +682,7 @@ impl<'a> CodeGenerator<'a> {
         self.config
             .service_generator
             .as_mut()
-            .map(move |service_generator| service_generator.generate(service, buf));
+            .map(move |service_generator| service_generator.generate(service,  descriptor_set, buf));
     }
 
     fn push_indent(&mut self) {
