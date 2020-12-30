@@ -157,6 +157,26 @@ impl From<Timestamp> for std::time::SystemTime {
     }
 }
 
+/// Converts a `chrono::DateTime` to a `Timestamp`.
+#[cfg(feature = "chrono-conversions")]
+impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Timestamp {
+    fn from(dt: chrono::DateTime<Tz>) -> Self {
+        Self {
+            seconds: dt.timestamp() as _,
+            nanos: dt.timestamp_subsec_nanos() as _,
+        }
+    }
+}
+
+/// Converts a `Timestamp` to a `chrono::DateTime`.
+#[cfg(feature = "chrono-conversions")]
+impl Into<chrono::DateTime<chrono::Utc>> for Timestamp {
+    fn into(self) -> chrono::DateTime<chrono::Utc> {
+        use chrono::TimeZone;
+        chrono::Utc.timestamp(self.seconds, self.nanos as _)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -242,5 +262,41 @@ mod tests {
                 nanos: 12_345_679
             }
         );
+    }
+
+    #[cfg(feature = "chrono-conversions")]
+    #[test]
+    fn test_datetime_to_wkt_timestamp() {
+        use chrono::{DateTime, TimeZone, Utc};
+
+        let date_utc = Utc.ymd(2014, 7, 8).and_hms_nano(9, 10, 11, 12);
+        let ts0: Timestamp = date_utc.into();
+        let expected0 = Timestamp {
+            seconds: 1404810611,
+            nanos: 12,
+        };
+        assert_eq!(ts0, expected0);
+
+        let date_6 = DateTime::parse_from_rfc2822("8 Jul 2014 09:10:11 +0600").unwrap();
+        let ts6: Timestamp = date_6.into();
+        let expected6 = Timestamp {
+            seconds: 1404810611 - 6 * 3600,
+            nanos: 0,
+        };
+        assert_eq!(ts6, expected6);
+    }
+
+    #[cfg(feature = "chrono-conversions")]
+    #[test]
+    fn test_wkt_timestamp_to_datetime() {
+        use chrono::{DateTime, TimeZone, Utc};
+
+        let ts = Timestamp {
+            seconds: 1404810611,
+            nanos: 12,
+        };
+        let expected_date = Utc.ymd(2014, 7, 8).and_hms_nano(9, 10, 11, 12);
+        let date: DateTime<Utc> = ts.into();
+        assert_eq!(date, expected_date);
     }
 }
