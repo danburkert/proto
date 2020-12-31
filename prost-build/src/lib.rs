@@ -182,6 +182,14 @@ pub trait ServiceGenerator {
     fn finalize_package(&mut self, _package: &str, _buf: &mut String) {}
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum Visibility {
+    /// pub
+    Public,
+    /// not pub
+    Private,
+}
+
 /// Configuration options for Protobuf code generation.
 ///
 /// This configuration builder can be used to set non-default code generation options.
@@ -192,6 +200,7 @@ pub struct Config {
     bytes: Vec<String>,
     type_attributes: Vec<(String, String)>,
     field_attributes: Vec<(String, String)>,
+    field_visibilities: Vec<(String, Visibility)>,
     prost_types: bool,
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
@@ -350,6 +359,34 @@ impl Config {
     {
         self.field_attributes
             .push((path.as_ref().to_string(), attribute.as_ref().to_string()));
+        self
+    }
+
+    /// Choose the visibilily of matched fields.
+    ///
+    /// # Arguments
+    ///
+    /// **`path`** - a patch matching any number of fields. These fields get the specified visibility.
+    /// For details about matching fields see [`btree_map`](#method.btree_map).
+    ///
+    /// **`visibility`** - whether the field will be `pub` (the default) or not.
+    ///
+    /// Note that for `optional` proto2 fields, a getter will be generated, which will be `pub` anyway
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # let mut config = prost_build::Config::new();
+    /// // Prost renames fields named `in` to `in_`. But if serialized through serde,
+    /// // they should as `in`.
+    /// config.field_visibility("in", prost_build::Visibility::Private);
+    /// ```
+    pub fn field_visibility<P>(&mut self, path: P, visibility: Visibility) -> &mut Self
+    where
+        P: AsRef<str>,
+    {
+        self.field_visibilities
+            .push((path.as_ref().to_string(), visibility));
         self
     }
 
@@ -794,6 +831,7 @@ impl default::Default for Config {
             bytes: Vec::new(),
             type_attributes: Vec::new(),
             field_attributes: Vec::new(),
+            field_visibilities: Vec::new(),
             prost_types: true,
             strip_enum_prefix: true,
             out_dir: None,
