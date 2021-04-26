@@ -26,17 +26,27 @@ pub fn to_snake(s: &str) -> String {
         "self" | "super" | "extern" | "crate" => ident += "_",
         _ => (),
     }
+
+    if !ident.chars().nth(0).unwrap_or('x').is_alphabetic() {
+        return format!("_{}", ident);
+    }
+
     ident
 }
 
 /// Converts a `snake_case` identifier to an `UpperCamel` case Rust type identifier.
 pub fn to_upper_camel(s: &str) -> String {
-    let mut ident = s.to_camel_case();
+    let ident = s.to_camel_case();
 
     // Suffix an underscore for the `Self` Rust keyword as it is not allowed as raw identifier.
     if ident == "Self" {
-        ident += "_";
+        return format!("{}_", ident);
     }
+
+    if !ident.chars().nth(0).unwrap_or('x').is_alphabetic() {
+        return format!("_{}", ident);
+    }
+
     ident
 }
 
@@ -158,5 +168,13 @@ mod tests {
         assert_eq!("FuzzBuster", &to_upper_camel("fuzzBuster"));
         assert_eq!("FuzzBuster", &to_upper_camel("FuzzBuster"));
         assert_eq!("Self_", &to_upper_camel("self"));
+    }
+
+    #[test]
+    fn test_alphabetic() {
+        assert_eq!("_1234", &to_upper_camel("1234"));
+        assert_eq!("_9fooBar", &to_upper_camel("9foo_bar"));
+        assert_eq!("_1234", &to_snake("1234"));
+        assert_eq!("_42whatever_man", &to_snake("42WhateverMan"));
     }
 }
