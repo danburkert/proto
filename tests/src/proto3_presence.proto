@@ -4,4 +4,8 @@ package proto3.presence;
 
 message A {
   optional int32 b = 1;
+
+  oneof foo {
+    int32 c = 2;
+  }
 }

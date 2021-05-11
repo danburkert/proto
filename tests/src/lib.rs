@@ -597,7 +597,10 @@ mod tests {
 
     #[test]
     fn test_proto3_presence() {
-        let msg = proto3::presence::A { b: Some(42) };
+        let msg = proto3::presence::A {
+            b: Some(42),
+            foo: Some(proto3::presence::a::Foo::C(13)),
+        };
 
         check_message(&msg);
     }

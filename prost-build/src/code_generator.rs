@@ -237,12 +237,12 @@ impl<'a> CodeGenerator<'a> {
 
             for (idx, oneof) in message.oneof_decl.into_iter().enumerate() {
                 let idx = idx as i32;
-                self.append_oneof(
-                    &fq_message_name,
-                    oneof,
-                    idx,
-                    oneof_fields.remove(&idx).unwrap(),
-                );
+                // optional fields create a synthetic oneof that we want to skip
+                let fields = match oneof_fields.remove(&idx) {
+                    Some(fields) => fields,
+                    None => continue,
+                };
+                self.append_oneof(&fq_message_name, oneof, idx, fields);
             }
 
             self.pop_mod();
