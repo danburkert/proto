@@ -21,4 +21,4 @@ bytes = { version = "1", default-features = false }
 prost = { version = "0.7.0", path = "..", default-features = false, features = ["prost-derive"] }
 
 [dev-dependencies]
-proptest = "0.9"
+proptest = "1"

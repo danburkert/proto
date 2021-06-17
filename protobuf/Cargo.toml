@@ -20,7 +20,7 @@ tempfile = "3"
 
 [dev-dependencies]
 criterion = "0.3"
-cfg-if = "0.1"
+cfg-if = "1"
 
 [lib]
 # https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options

@@ -20,7 +20,7 @@ path = "../tests/src/lib.rs"
 [dependencies]
 anyhow = { version = "1", default-features = false }
 bytes = { version = "1", default-features = false }
-cfg-if = "0.1"
+cfg-if = "1"
 prost = { path = "..", default-features = false, features = ["prost-derive"] }
 prost-types = { path = "../prost-types", default-features = false }
 protobuf = { path = "../protobuf" }
@@ -31,7 +31,7 @@ prost-build = { path = "../prost-build" }
 tempfile = "3"
 
 [build-dependencies]
-cfg-if = "0.1"
+cfg-if = "1"
 env_logger = { version = "0.8", default-features = false }
 prost-build = { path = "../prost-build" }
 protobuf = { path = "../protobuf" }
