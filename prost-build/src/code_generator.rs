@@ -18,7 +18,7 @@ use crate::ast::{Comments, Method, Service};
 use crate::extern_paths::ExternPaths;
 use crate::ident::{to_snake, to_upper_camel};
 use crate::message_graph::MessageGraph;
-use crate::{BytesType, Config, MapType};
+use crate::{BytesType, Config, FieldTypes, MapType, TypeTypes};
 
 #[derive(PartialEq)]
 enum Syntax {
@@ -116,6 +116,8 @@ impl<'a> CodeGenerator<'a> {
     fn append_message(&mut self, message: DescriptorProto) {
         debug!("  message: {:?}", message.name());
 
+        let msg = message.clone();
+
         let message_name = message.name().to_string();
         let fq_message_name = format!(".{}.{}", self.package, message.name());
 
@@ -171,7 +173,7 @@ impl<'a> CodeGenerator<'a> {
             });
 
         self.append_doc(&fq_message_name, None);
-        self.append_type_attributes(&fq_message_name);
+        self.append_type_attributes(&fq_message_name, TypeTypes::Message(&msg));
         self.push_indent();
         self.buf
             .push_str("#[derive(Clone, PartialEq, ::prost::Message)]\n");
@@ -249,17 +251,21 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    fn append_type_attributes(&mut self, fq_message_name: &str) {
+    fn append_type_attributes(&mut self, fq_message_name: &str, r#type: TypeTypes) {
         assert_eq!(b'.', fq_message_name.as_bytes()[0]);
         // TODO: this clone is dirty, but expedious.
         if let Some(attributes) = self.config.type_attributes.get(fq_message_name).cloned() {
-            self.push_indent();
-            self.buf.push_str(&attributes);
-            self.buf.push('\n');
+            for attribute in attributes.borrow().iter() {
+                if let Some(attribute) = attribute(&r#type) {
+                    self.push_indent();
+                    self.buf.push_str(&attribute);
+                    self.buf.push('\n');
+                }
+            }
         }
     }
 
-    fn append_field_attributes(&mut self, fq_message_name: &str, field_name: &str) {
+    fn append_field_attributes(&mut self, fq_message_name: &str, field_name: &str, field: FieldTypes) {
         assert_eq!(b'.', fq_message_name.as_bytes()[0]);
         // TODO: this clone is dirty, but expedious.
         if let Some(attributes) = self
@@ -268,9 +274,13 @@ impl<'a> CodeGenerator<'a> {
             .get_field(fq_message_name, field_name)
             .cloned()
         {
-            self.push_indent();
-            self.buf.push_str(&attributes);
-            self.buf.push('\n');
+            for attribute in attributes.borrow().iter() {
+                if let Some(attribute) = attribute(&field) {
+                    self.push_indent();
+                    self.buf.push_str(&attribute);
+                    self.buf.push('\n');
+                }
+            }
         }
     }
 
@@ -379,7 +389,7 @@ impl<'a> CodeGenerator<'a> {
         }
 
         self.buf.push_str("\")]\n");
-        self.append_field_attributes(fq_message_name, field.name());
+        self.append_field_attributes(fq_message_name, field.name(), FieldTypes::Field(&field));
         self.push_indent();
         self.buf.push_str("pub ");
         self.buf.push_str(&to_snake(field.name()));
@@ -438,7 +448,7 @@ impl<'a> CodeGenerator<'a> {
             value_tag,
             field.number()
         ));
-        self.append_field_attributes(fq_message_name, field.name());
+        self.append_field_attributes(fq_message_name, field.name(), FieldTypes::Map(&field));
         self.push_indent();
         self.buf.push_str(&format!(
             "pub {}: {}<{}, {}>,\n",
@@ -471,7 +481,7 @@ impl<'a> CodeGenerator<'a> {
                 .map(|&(ref field, _)| field.number())
                 .join(", ")
         ));
-        self.append_field_attributes(fq_message_name, oneof.name());
+        self.append_field_attributes(fq_message_name, oneof.name(), FieldTypes::OneofField(&oneof));
         self.push_indent();
         self.buf.push_str(&format!(
             "pub {}: ::core::option::Option<{}>,\n",
@@ -494,7 +504,7 @@ impl<'a> CodeGenerator<'a> {
         self.path.pop();
 
         let oneof_name = format!("{}.{}", fq_message_name, oneof.name());
-        self.append_type_attributes(&oneof_name);
+        self.append_type_attributes(&oneof_name, TypeTypes::Oneof(&oneof));
         self.push_indent();
         self.buf
             .push_str("#[derive(Clone, PartialEq, ::prost::Oneof)]\n");
@@ -519,7 +529,7 @@ impl<'a> CodeGenerator<'a> {
                 ty_tag,
                 field.number()
             ));
-            self.append_field_attributes(&oneof_name, field.name());
+            self.append_field_attributes(&oneof_name, field.name(), FieldTypes::OneofVariant(&field));
 
             self.push_indent();
             let ty = self.resolve_type(&field, fq_message_name);
@@ -590,7 +600,7 @@ impl<'a> CodeGenerator<'a> {
         }
 
         self.append_doc(&fq_enum_name, None);
-        self.append_type_attributes(&fq_enum_name);
+        self.append_type_attributes(&fq_enum_name, TypeTypes::Enum(&desc));
         self.push_indent();
         self.buf.push_str(
             "#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]\n",
@@ -636,7 +646,7 @@ impl<'a> CodeGenerator<'a> {
         prefix_to_strip: Option<String>,
     ) {
         self.append_doc(fq_enum_name, Some(value.name()));
-        self.append_field_attributes(fq_enum_name, &value.name());
+        self.append_field_attributes(fq_enum_name, &value.name(), FieldTypes::EnumValue(value));
         self.push_indent();
         let name = to_upper_camel(value.name());
         let name_unprefixed = match prefix_to_strip {

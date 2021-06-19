@@ -116,6 +116,7 @@ mod ident;
 mod message_graph;
 mod path;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::default;
 use std::env;
@@ -125,10 +126,14 @@ use std::fs;
 use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 
 use log::trace;
 use prost::Message;
-use prost_types::{FileDescriptorProto, FileDescriptorSet};
+use prost_types::{
+    FileDescriptorProto, FileDescriptorSet, DescriptorProto, EnumDescriptorProto,
+    EnumValueDescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+};
 
 pub use crate::ast::{Comments, Method, Service};
 use crate::code_generator::CodeGenerator;
@@ -216,6 +221,44 @@ impl Default for BytesType {
     }
 }
 
+pub enum TypeAttribute<A> {
+    Static(A),
+    Dynamic(Rc<dyn Fn(&TypeTypes) -> Option<String>>),
+}
+
+impl<A> From<A> for TypeAttribute<A> {
+    fn from(attribute: A) -> Self {
+        TypeAttribute::Static(attribute)
+    }
+}
+
+pub enum FieldAttribute<A> {
+    Static(A),
+    Dynamic(Rc<dyn Fn(&FieldTypes) -> Option<String>>),
+}
+
+impl<A> From<A> for FieldAttribute<A> {
+    fn from(attribute: A) -> Self {
+        FieldAttribute::Static(attribute)
+    }
+}
+
+#[derive(PartialEq)]
+pub enum TypeTypes<'a> {
+    Message(&'a DescriptorProto),
+    Enum(&'a EnumDescriptorProto),
+    Oneof(&'a OneofDescriptorProto),
+}
+
+#[derive(PartialEq)]
+pub enum FieldTypes<'a> {
+    Field(&'a FieldDescriptorProto),
+    Map(&'a FieldDescriptorProto),
+    OneofVariant(&'a FieldDescriptorProto),
+    OneofField(&'a OneofDescriptorProto),
+    EnumValue(&'a EnumValueDescriptorProto),
+}
+
 /// Configuration options for Protobuf code generation.
 ///
 /// This configuration builder can be used to set non-default code generation options.
@@ -224,8 +267,8 @@ pub struct Config {
     service_generator: Option<Box<dyn ServiceGenerator>>,
     map_type: PathMap<MapType>,
     bytes_type: PathMap<BytesType>,
-    type_attributes: PathMap<String>,
-    field_attributes: PathMap<String>,
+    type_attributes: PathMap<RefCell<Vec<Rc<dyn Fn(&TypeTypes) -> Option<String>>>>>,
+    field_attributes: PathMap<RefCell<Vec<Rc<dyn Fn(&FieldTypes) -> Option<String>>>>>,
     prost_types: bool,
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
@@ -385,13 +428,22 @@ impl Config {
     /// // they should as `in`.
     /// config.field_attribute("in", "#[serde(rename = \"in\")]");
     /// ```
-    pub fn field_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    pub fn field_attribute<P, A, F>(&mut self, path: P, attribute: F) -> &mut Self
     where
         P: AsRef<str>,
-        A: AsRef<str>,
+        A: AsRef<str> + 'static,
+        F: Into<FieldAttribute<A>>,
     {
-        self.field_attributes
-            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        let attribute: Rc<dyn Fn(&FieldTypes) -> Option<String>> = match attribute.into() {
+            FieldAttribute::Static(a) => Rc::new(move |_| Some(a.as_ref().to_owned())),
+            FieldAttribute::Dynamic(a) => a,
+        };
+
+        match self.field_attributes.get(path.as_ref()) {
+            Some(attributes) => attributes.borrow_mut().push(attribute),
+            None => self.field_attributes.insert(path.as_ref().to_string(), RefCell::new(vec![attribute])),
+        }
+
         self
     }
 
@@ -434,13 +486,22 @@ impl Config {
     ///
     /// In other words, to place an attribute on the `enum` implementing the `oneof`, the match
     /// would look like `my_messages.MyMessageType.oneofname`.
-    pub fn type_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    pub fn type_attribute<P, A, F>(&mut self, path: P, attribute: F) -> &mut Self
     where
         P: AsRef<str>,
-        A: AsRef<str>,
+        A: AsRef<str> + 'static,
+        F: Into<TypeAttribute<A>>,
     {
-        self.type_attributes
-            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        let attribute: Rc<dyn Fn(&TypeTypes) -> Option<String>> = match attribute.into() {
+            TypeAttribute::Static(a) => Rc::new(move |_| Some(a.as_ref().to_owned())),
+            TypeAttribute::Dynamic(a) => a,
+        };
+
+        match self.type_attributes.get(path.as_ref()) {
+            Some(attributes) => attributes.borrow_mut().push(attribute),
+            None => self.type_attributes.insert(path.as_ref().to_string(), RefCell::new(vec![attribute])),
+        }
+
         self
     }
 
@@ -861,8 +922,6 @@ impl fmt::Debug for Config {
             )
             .field("map_type", &self.map_type)
             .field("bytes_type", &self.bytes_type)
-            .field("type_attributes", &self.type_attributes)
-            .field("field_attributes", &self.field_attributes)
             .field("prost_types", &self.prost_types)
             .field("strip_enum_prefix", &self.strip_enum_prefix)
             .field("out_dir", &self.out_dir)
@@ -942,7 +1001,6 @@ pub fn protoc_include() -> PathBuf {
 mod tests {
     use super::*;
     use std::cell::RefCell;
-    use std::rc::Rc;
 
     /// An example service generator that generates a trait with methods corresponding to the
     /// service methods.

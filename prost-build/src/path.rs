@@ -4,9 +4,17 @@ use std::collections::HashMap;
 use std::iter;
 
 /// Maps a fully-qualified Protobuf path to a value using path matchers.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct PathMap<T> {
     matchers: HashMap<String, T>,
+}
+
+impl<T> Default for PathMap<T> {
+    fn default() -> Self {
+        Self {
+            matchers: HashMap::new(),
+        }
+    }
 }
 
 impl<T> PathMap<T> {
