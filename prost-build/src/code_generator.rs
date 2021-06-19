@@ -81,6 +81,12 @@ impl<'a> CodeGenerator<'a> {
             code_gen.package
         );
 
+        if let Some(filename) = file.name {
+            code_gen
+                .buf
+                .push_str(&format!("\n// source: {}\n\n", filename));
+        }
+
         code_gen.path.push(4);
         for (idx, message) in file.message_type.into_iter().enumerate() {
             code_gen.path.push(idx as i32);
