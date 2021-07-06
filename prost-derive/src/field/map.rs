@@ -128,21 +128,21 @@ impl Field {
     }
 
     /// Returns a statement which encodes the map field.
-    pub fn encode(&self, ident: TokenStream) -> TokenStream {
+    pub fn encode(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let tag = self.tag;
         let key_mod = self.key_ty.module();
-        let ke = quote!(::prost::encoding::#key_mod::encode);
-        let kl = quote!(::prost::encoding::#key_mod::encoded_len);
+        let ke = quote!(#prost_path ::encoding::#key_mod::encode);
+        let kl = quote!(#prost_path ::encoding::#key_mod::encoded_len);
         let module = self.map_ty.module();
         match &self.value_ty {
             ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
                 let default = quote!(#ty::default() as i32);
                 quote! {
-                    ::prost::encoding::#module::encode_with_default(
+                    #prost_path ::encoding::#module::encode_with_default(
                         #ke,
                         #kl,
-                        ::prost::encoding::int32::encode,
-                        ::prost::encoding::int32::encoded_len,
+                        #prost_path ::encoding::int32::encode,
+                        #prost_path ::encoding::int32::encoded_len,
                         &(#default),
                         #tag,
                         &#ident,
@@ -152,10 +152,10 @@ impl Field {
             }
             ValueTy::Scalar(value_ty) => {
                 let val_mod = value_ty.module();
-                let ve = quote!(::prost::encoding::#val_mod::encode);
-                let vl = quote!(::prost::encoding::#val_mod::encoded_len);
+                let ve = quote!(#prost_path ::encoding::#val_mod::encode);
+                let vl = quote!(#prost_path ::encoding::#val_mod::encoded_len);
                 quote! {
-                    ::prost::encoding::#module::encode(
+                    #prost_path ::encoding::#module::encode(
                         #ke,
                         #kl,
                         #ve,
@@ -167,11 +167,11 @@ impl Field {
                 }
             }
             ValueTy::Message => quote! {
-                ::prost::encoding::#module::encode(
+                #prost_path ::encoding::#module::encode(
                     #ke,
                     #kl,
-                    ::prost::encoding::message::encode,
-                    ::prost::encoding::message::encoded_len,
+                    #prost_path ::encoding::message::encode,
+                    #prost_path ::encoding::message::encoded_len,
                     #tag,
                     &#ident,
                     buf,
@@ -182,17 +182,17 @@ impl Field {
 
     /// Returns an expression which evaluates to the result of merging a decoded key value pair
     /// into the map.
-    pub fn merge(&self, ident: TokenStream) -> TokenStream {
+    pub fn merge(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let key_mod = self.key_ty.module();
-        let km = quote!(::prost::encoding::#key_mod::merge);
+        let km = quote!(#prost_path ::encoding::#key_mod::merge);
         let module = self.map_ty.module();
         match &self.value_ty {
             ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
                 let default = quote!(#ty::default() as i32);
                 quote! {
-                    ::prost::encoding::#module::merge_with_default(
+                    #prost_path ::encoding::#module::merge_with_default(
                         #km,
-                        ::prost::encoding::int32::merge,
+                        #prost_path ::encoding::int32::merge,
                         #default,
                         &mut #ident,
                         buf,
@@ -202,13 +202,13 @@ impl Field {
             }
             ValueTy::Scalar(value_ty) => {
                 let val_mod = value_ty.module();
-                let vm = quote!(::prost::encoding::#val_mod::merge);
-                quote!(::prost::encoding::#module::merge(#km, #vm, &mut #ident, buf, ctx))
+                let vm = quote!(#prost_path ::encoding::#val_mod::merge);
+                quote!(#prost_path ::encoding::#module::merge(#km, #vm, &mut #ident, buf, ctx))
             }
             ValueTy::Message => quote! {
-                ::prost::encoding::#module::merge(
+                #prost_path ::encoding::#module::merge(
                     #km,
-                    ::prost::encoding::message::merge,
+                    #prost_path ::encoding::message::merge,
                     &mut #ident,
                     buf,
                     ctx,
@@ -218,18 +218,18 @@ impl Field {
     }
 
     /// Returns an expression which evaluates to the encoded length of the map.
-    pub fn encoded_len(&self, ident: TokenStream) -> TokenStream {
+    pub fn encoded_len(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let tag = self.tag;
         let key_mod = self.key_ty.module();
-        let kl = quote!(::prost::encoding::#key_mod::encoded_len);
+        let kl = quote!(#prost_path ::encoding::#key_mod::encoded_len);
         let module = self.map_ty.module();
         match &self.value_ty {
             ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
                 let default = quote!(#ty::default() as i32);
                 quote! {
-                    ::prost::encoding::#module::encoded_len_with_default(
+                    #prost_path ::encoding::#module::encoded_len_with_default(
                         #kl,
-                        ::prost::encoding::int32::encoded_len,
+                        #prost_path ::encoding::int32::encoded_len,
                         &(#default),
                         #tag,
                         &#ident,
@@ -238,13 +238,13 @@ impl Field {
             }
             ValueTy::Scalar(value_ty) => {
                 let val_mod = value_ty.module();
-                let vl = quote!(::prost::encoding::#val_mod::encoded_len);
-                quote!(::prost::encoding::#module::encoded_len(#kl, #vl, #tag, &#ident))
+                let vl = quote!(#prost_path ::encoding::#val_mod::encoded_len);
+                quote!(#prost_path ::encoding::#module::encoded_len(#kl, #vl, #tag, &#ident))
             }
             ValueTy::Message => quote! {
-                ::prost::encoding::#module::encoded_len(
+                #prost_path ::encoding::#module::encoded_len(
                     #kl,
-                    ::prost::encoding::message::encoded_len,
+                    #prost_path ::encoding::message::encoded_len,
                     #tag,
                     &#ident,
                 )
@@ -257,9 +257,9 @@ impl Field {
     }
 
     /// Returns methods to embed in the message.
-    pub fn methods(&self, ident: &Ident) -> Option<TokenStream> {
+    pub fn methods(&self, ident: &Ident, prost_path: &TokenStream) -> Option<TokenStream> {
         if let ValueTy::Scalar(scalar::Ty::Enumeration(ty)) = &self.value_ty {
-            let key_ty = self.key_ty.rust_type();
+            let key_ty = self.key_ty.rust_type(prost_path);
             let key_ref_ty = self.key_ty.rust_ref_type();
 
             let get = Ident::new(&format!("get_{}", ident), Span::call_site());
@@ -295,16 +295,16 @@ impl Field {
     ///
     /// The Debug tries to convert any enumerations met into the variants if possible, instead of
     /// outputting the raw numbers.
-    pub fn debug(&self, wrapper_name: TokenStream) -> TokenStream {
+    pub fn debug(&self, wrapper_name: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let type_name = match self.map_ty {
             MapTy::HashMap => Ident::new("HashMap", Span::call_site()),
             MapTy::BTreeMap => Ident::new("BTreeMap", Span::call_site()),
         };
 
         // A fake field for generating the debug wrapper
-        let key_wrapper = fake_scalar(self.key_ty.clone()).debug(quote!(KeyWrapper));
-        let key = self.key_ty.rust_type();
-        let value_wrapper = self.value_ty.debug();
+        let key_wrapper = fake_scalar(self.key_ty.clone()).debug(quote!(KeyWrapper), prost_path);
+        let key = self.key_ty.rust_type(prost_path);
+        let value_wrapper = self.value_ty.debug(prost_path);
         let libname = self.map_ty.lib();
         let fmt = quote! {
             fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
@@ -319,7 +319,7 @@ impl Field {
         };
         match &self.value_ty {
             ValueTy::Scalar(ty) => {
-                let value = ty.rust_type();
+                let value = ty.rust_type(prost_path);
                 quote! {
                     struct #wrapper_name<'a>(&'a ::#libname::collections::#type_name<#key, #value>);
                     impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
@@ -381,9 +381,9 @@ impl ValueTy {
     ///
     /// If the contained value is enumeration, it tries to convert it to the variant. If not, it
     /// just forwards the implementation.
-    fn debug(&self) -> TokenStream {
+    fn debug(&self, prost_path: &TokenStream) -> TokenStream {
         match self {
-            ValueTy::Scalar(ty) => fake_scalar(ty.clone()).debug(quote!(ValueWrapper)),
+            ValueTy::Scalar(ty) => fake_scalar(ty.clone()).debug(quote!(ValueWrapper), prost_path),
             ValueTy::Message => quote!(
                 fn ValueWrapper<T>(v: T) -> T {
                     v

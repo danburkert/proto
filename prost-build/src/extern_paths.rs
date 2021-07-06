@@ -23,7 +23,10 @@ pub struct ExternPaths {
 }
 
 impl ExternPaths {
-    pub fn new(paths: &[(String, String)], prost_types: bool) -> Result<ExternPaths, String> {
+    pub fn new(
+        paths: &[(String, String)],
+        prost_types: Option<(&str, &str)>,
+    ) -> Result<ExternPaths, String> {
         let mut extern_paths = ExternPaths {
             extern_paths: HashMap::new(),
         };
@@ -32,12 +35,12 @@ impl ExternPaths {
             extern_paths.insert(proto_path.clone(), rust_path.clone())?;
         }
 
-        if prost_types {
-            extern_paths.insert(".google.protobuf".to_string(), "::prost_types".to_string())?;
+        if let Some((prost_types_path, prost_path)) = prost_types {
+            extern_paths.insert(".google.protobuf".to_string(), prost_types_path.to_string())?;
             extern_paths.insert(".google.protobuf.BoolValue".to_string(), "bool".to_string())?;
             extern_paths.insert(
                 ".google.protobuf.BytesValue".to_string(),
-                "::prost::alloc::vec::Vec<u8>".to_string(),
+                format!("{}::alloc::vec::Vec<u8>", prost_path),
             )?;
             extern_paths.insert(
                 ".google.protobuf.DoubleValue".to_string(),
@@ -49,7 +52,7 @@ impl ExternPaths {
             extern_paths.insert(".google.protobuf.Int64Value".to_string(), "i64".to_string())?;
             extern_paths.insert(
                 ".google.protobuf.StringValue".to_string(),
-                "::prost::alloc::string::String".to_string(),
+                format!("{}::alloc::string::String", prost_path),
             )?;
             extern_paths.insert(
                 ".google.protobuf.UInt32Value".to_string(),
@@ -131,7 +134,7 @@ mod tests {
                 (".foo.Fuzz".to_string(), "::foo4::Fuzz".to_string()),
                 (".a.b.c.d.e.f".to_string(), "::abc::def".to_string()),
             ],
-            false,
+            None,
         )
         .unwrap();
 
@@ -157,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_well_known_types() {
-        let paths = ExternPaths::new(&[], true).unwrap();
+        let paths = ExternPaths::new(&[], Some(("::prost_types", "::prost"))).unwrap();
 
         let case = |proto_ident: &str, resolved_ident: &str| {
             assert_eq!(paths.resolve_ident(proto_ident).unwrap(), resolved_ident);
@@ -165,6 +168,33 @@ mod tests {
 
         case(".google.protobuf.Value", "::prost_types::Value");
         case(".google.protobuf.Duration", "::prost_types::Duration");
+        case(".google.protobuf.Empty", "()");
+    }
+
+    #[test]
+    fn test_well_known_types_different_path() {
+        let paths = ExternPaths::new(
+            &[],
+            Some(("::other_crate::prost_types", "::another_crate::prost")),
+        )
+        .unwrap();
+
+        let case = |proto_ident: &str, resolved_ident: &str| {
+            assert_eq!(paths.resolve_ident(proto_ident).unwrap(), resolved_ident);
+        };
+
+        case(
+            ".google.protobuf.Value",
+            "::other_crate::prost_types::Value",
+        );
+        case(
+            ".google.protobuf.Duration",
+            "::other_crate::prost_types::Duration",
+        );
+        case(
+            ".google.protobuf.BytesValue",
+            "::another_crate::prost::alloc::vec::Vec<u8>",
+        );
         case(".google.protobuf.Empty", "()");
     }
 }

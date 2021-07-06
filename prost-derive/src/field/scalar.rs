@@ -105,14 +105,14 @@ impl Field {
         }
     }
 
-    pub fn encode(&self, ident: TokenStream) -> TokenStream {
+    pub fn encode(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let module = self.ty.module();
         let encode_fn = match self.kind {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(encode),
             Kind::Repeated => quote!(encode_repeated),
             Kind::Packed => quote!(encode_packed),
         };
-        let encode_fn = quote!(::prost::encoding::#module::#encode_fn);
+        let encode_fn = quote!(#prost_path ::encoding::#module::#encode_fn);
         let tag = self.tag;
 
         match self.kind {
@@ -137,13 +137,13 @@ impl Field {
 
     /// Returns an expression which evaluates to the result of merging a decoded
     /// scalar value into the field.
-    pub fn merge(&self, ident: TokenStream) -> TokenStream {
+    pub fn merge(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let module = self.ty.module();
         let merge_fn = match self.kind {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(merge),
             Kind::Repeated | Kind::Packed => quote!(merge_repeated),
         };
-        let merge_fn = quote!(::prost::encoding::#module::#merge_fn);
+        let merge_fn = quote!(#prost_path ::encoding::#module::#merge_fn);
 
         match self.kind {
             Kind::Plain(..) | Kind::Required(..) | Kind::Repeated | Kind::Packed => quote! {
@@ -159,14 +159,14 @@ impl Field {
     }
 
     /// Returns an expression which evaluates to the encoded length of the field.
-    pub fn encoded_len(&self, ident: TokenStream) -> TokenStream {
+    pub fn encoded_len(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let module = self.ty.module();
         let encoded_len_fn = match self.kind {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(encoded_len),
             Kind::Repeated => quote!(encoded_len_repeated),
             Kind::Packed => quote!(encoded_len_packed),
         };
-        let encoded_len_fn = quote!(::prost::encoding::#module::#encoded_len_fn);
+        let encoded_len_fn = quote!(#prost_path ::encoding::#module::#encoded_len_fn);
         let tag = self.tag;
 
         match self.kind {
@@ -204,11 +204,11 @@ impl Field {
     }
 
     /// Returns an expression which evaluates to the default value of the field.
-    pub fn default(&self) -> TokenStream {
+    pub fn default(&self, prost_path: &TokenStream) -> TokenStream {
         match self.kind {
-            Kind::Plain(ref value) | Kind::Required(ref value) => value.owned(),
+            Kind::Plain(ref value) | Kind::Required(ref value) => value.owned(prost_path),
             Kind::Optional(_) => quote!(::core::option::Option::None),
-            Kind::Repeated | Kind::Packed => quote!(::prost::alloc::vec::Vec::new()),
+            Kind::Repeated | Kind::Packed => quote!(#prost_path ::alloc::vec::Vec::new()),
         }
     }
 
@@ -234,9 +234,9 @@ impl Field {
     }
 
     /// Returns a fragment for formatting the field `ident` in `Debug`.
-    pub fn debug(&self, wrapper_name: TokenStream) -> TokenStream {
+    pub fn debug(&self, wrapper_name: TokenStream, prost_path: &TokenStream) -> TokenStream {
         let wrapper = self.debug_inner(quote!(Inner));
-        let inner_ty = self.ty.rust_type();
+        let inner_ty = self.ty.rust_type(prost_path);
         match self.kind {
             Kind::Plain(_) | Kind::Required(_) => self.debug_inner(wrapper_name),
             Kind::Optional(_) => quote! {
@@ -250,7 +250,7 @@ impl Field {
             },
             Kind::Repeated | Kind::Packed => {
                 quote! {
-                    struct #wrapper_name<'a>(&'a ::prost::alloc::vec::Vec<#inner_ty>);
+                    struct #wrapper_name<'a>(&'a #prost_path ::alloc::vec::Vec<#inner_ty>);
                     impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
                         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
                             let mut vec_builder = f.debug_list();
@@ -400,10 +400,10 @@ impl BytesTy {
         }
     }
 
-    fn rust_type(&self) -> TokenStream {
+    fn rust_type(&self, prost_path: &TokenStream) -> TokenStream {
         match self {
-            BytesTy::Vec => quote! { ::prost::alloc::vec::Vec<u8> },
-            BytesTy::Bytes => quote! { ::prost::bytes::Bytes },
+            BytesTy::Vec => quote! { #prost_path ::alloc::vec::Vec<u8> },
+            BytesTy::Bytes => quote! { #prost_path ::bytes::Bytes },
         }
     }
 }
@@ -517,10 +517,10 @@ impl Ty {
     }
 
     // TODO: rename to 'owned_type'.
-    pub fn rust_type(&self) -> TokenStream {
+    pub fn rust_type(&self, prost_path: &TokenStream) -> TokenStream {
         match self {
-            Ty::String => quote!(::prost::alloc::string::String),
-            Ty::Bytes(ty) => ty.rust_type(),
+            Ty::String => quote!(#prost_path ::alloc::string::String),
+            Ty::Bytes(ty) => ty.rust_type(prost_path),
             _ => self.rust_ref_type(),
         }
     }
@@ -763,10 +763,10 @@ impl DefaultValue {
         }
     }
 
-    pub fn owned(&self) -> TokenStream {
+    pub fn owned(&self, prost_path: &TokenStream) -> TokenStream {
         match *self {
             DefaultValue::String(ref value) if value.is_empty() => {
-                quote!(::prost::alloc::string::String::new())
+                quote!(#prost_path ::alloc::string::String::new())
             }
             DefaultValue::String(ref value) => quote!(#value.into()),
             DefaultValue::Bytes(ref value) if value.is_empty() => quote!(Default::default()),

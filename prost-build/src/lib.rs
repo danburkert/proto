@@ -232,6 +232,8 @@ pub struct Config {
     extern_paths: Vec<(String, String)>,
     protoc_args: Vec<OsString>,
     disable_comments: PathMap<()>,
+    prost_path: String,
+    prost_types_path: String,
 }
 
 impl Config {
@@ -680,6 +682,40 @@ impl Config {
         self
     }
 
+    // Configures the module path to `prost` in generated code. Defaults to `::prost`.
+    /// # Example `build.rs`
+    ///
+    /// ```rust,no_run
+    /// # use std::io::Result;
+    /// fn main() -> Result<()> {
+    ///   let mut prost_build = prost_build::Config::new();
+    ///   // my_crate re-exports prost
+    ///   prost_build.prost_path("::my_crate::prost");
+    ///   Ok(())
+    /// }
+    /// ```
+    pub fn prost_path(&mut self, path: impl Into<String>) -> &mut Self {
+        self.prost_path = path.into();
+        self
+    }
+
+    // Configures the module path to `prost_types` in generated code. Defaults to `::prost_types`.
+    /// # Example `build.rs`
+    ///
+    /// ```rust,no_run
+    /// # use std::io::Result;
+    /// fn main() -> Result<()> {
+    ///   let mut prost_build = prost_build::Config::new();
+    ///   // my_crate re-exports prost_types
+    ///   prost_build.prost_types_path("::my_crate::prost_types");
+    ///   Ok(())
+    /// }
+    /// ```
+    pub fn prost_types_path(&mut self, path: impl Into<String>) -> &mut Self {
+        self.prost_types_path = path.into();
+        self
+    }
+
     /// Compile `.proto` files into Rust files during a Cargo build with additional code generator
     /// configuration options.
     ///
@@ -799,7 +835,12 @@ impl Config {
 
         let message_graph = MessageGraph::new(&files)
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
-        let extern_paths = ExternPaths::new(&self.extern_paths, self.prost_types)
+        let prost_paths: Option<(&str, &str)> = if self.prost_types {
+            Some((&self.prost_types_path, &self.prost_path))
+        } else {
+            None
+        };
+        let extern_paths = ExternPaths::new(&self.extern_paths, prost_paths)
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
 
         for file in files {
@@ -848,6 +889,8 @@ impl default::Default for Config {
             extern_paths: Vec::new(),
             protoc_args: Vec::new(),
             disable_comments: PathMap::default(),
+            prost_path: "::prost".to_string(),
+            prost_types_path: "::prost_types".to_string(),
         }
     }
 }

@@ -173,8 +173,17 @@ impl<'a> CodeGenerator<'a> {
         self.append_doc(&fq_message_name, None);
         self.append_type_attributes(&fq_message_name);
         self.push_indent();
-        self.buf
-            .push_str("#[derive(Clone, PartialEq, ::prost::Message)]\n");
+        self.buf.push_str(&format!(
+            "#[derive(Clone, PartialEq, {}::Message)]\n",
+            self.config.prost_path
+        ));
+        self.push_indent();
+        if self.config.prost_path != "::prost" {
+            self.buf.push_str(&format!(
+                "#[prost(path = \"{}\")]\n",
+                self.config.prost_path
+            ));
+        }
         self.push_indent();
         self.buf.push_str("pub struct ");
         self.buf.push_str(&to_upper_camel(&message_name));
@@ -385,12 +394,14 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str(&to_snake(field.name()));
         self.buf.push_str(": ");
         if repeated {
-            self.buf.push_str("::prost::alloc::vec::Vec<");
+            self.buf
+                .push_str(&format!("{}::alloc::vec::Vec<", self.config.prost_path));
         } else if optional {
             self.buf.push_str("::core::option::Option<");
         }
         if boxed {
-            self.buf.push_str("::prost::alloc::boxed::Box<");
+            self.buf
+                .push_str(&format!("{}::alloc::boxed::Box<", self.config.prost_path));
         }
         self.buf.push_str(&ty);
         if boxed {
@@ -443,7 +454,7 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str(&format!(
             "pub {}: {}<{}, {}>,\n",
             to_snake(field.name()),
-            map_type.rust_type(),
+            map_type.rust_type(&self.config.prost_path),
             key_ty,
             value_ty
         ));
@@ -496,8 +507,10 @@ impl<'a> CodeGenerator<'a> {
         let oneof_name = format!("{}.{}", fq_message_name, oneof.name());
         self.append_type_attributes(&oneof_name);
         self.push_indent();
-        self.buf
-            .push_str("#[derive(Clone, PartialEq, ::prost::Oneof)]\n");
+        self.buf.push_str(&format!(
+            "#[derive(Clone, PartialEq, {}::Oneof)]\n",
+            self.config.prost_path
+        ));
         self.push_indent();
         self.buf.push_str("pub enum ");
         self.buf.push_str(&to_upper_camel(oneof.name()));
@@ -538,8 +551,9 @@ impl<'a> CodeGenerator<'a> {
 
             if boxed {
                 self.buf.push_str(&format!(
-                    "{}(::prost::alloc::boxed::Box<{}>),\n",
+                    "{}({}::alloc::boxed::Box<{}>),\n",
                     to_upper_camel(field.name()),
+                    self.config.prost_path,
                     ty
                 ));
             } else {
@@ -593,7 +607,10 @@ impl<'a> CodeGenerator<'a> {
         self.append_type_attributes(&fq_enum_name);
         self.push_indent();
         self.buf.push_str(
-            "#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]\n",
+            &format!(
+                "#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, {}::Enumeration)]\n", 
+                self.config.prost_path
+            ),
         );
         self.push_indent();
         self.buf.push_str("#[repr(i32)]\n");
@@ -746,14 +763,14 @@ impl<'a> CodeGenerator<'a> {
             Type::Int32 | Type::Sfixed32 | Type::Sint32 | Type::Enum => String::from("i32"),
             Type::Int64 | Type::Sfixed64 | Type::Sint64 => String::from("i64"),
             Type::Bool => String::from("bool"),
-            Type::String => String::from("::prost::alloc::string::String"),
+            Type::String => format!("{}::alloc::string::String", self.config.prost_path),
             Type::Bytes => self
                 .config
                 .bytes_type
                 .get_field(fq_message_name, field.name())
                 .copied()
                 .unwrap_or_default()
-                .rust_type()
+                .rust_type(&self.config.prost_path)
                 .to_owned(),
             Type::Group | Type::Message => self.resolve_ident(field.type_name()),
         }
@@ -1008,10 +1025,10 @@ impl MapType {
     }
 
     /// The fully-qualified Rust type corresponding to the map type.
-    fn rust_type(&self) -> &'static str {
+    fn rust_type(&self, prost_path: &str) -> String {
         match self {
-            MapType::HashMap => "::std::collections::HashMap",
-            MapType::BTreeMap => "::prost::alloc::collections::BTreeMap",
+            MapType::HashMap => "::std::collections::HashMap".to_string(),
+            MapType::BTreeMap => format!("{}::alloc::collections::BTreeMap", prost_path),
         }
     }
 }
@@ -1026,10 +1043,10 @@ impl BytesType {
     }
 
     /// The fully-qualified Rust type corresponding to the bytes type.
-    fn rust_type(&self) -> &'static str {
+    fn rust_type(&self, prost_path: &str) -> String {
         match self {
-            BytesType::Vec => "::prost::alloc::vec::Vec<u8>",
-            BytesType::Bytes => "::prost::bytes::Bytes",
+            BytesType::Vec => format!("{}::alloc::vec::Vec<u8>", prost_path),
+            BytesType::Bytes => format!("{}::bytes::Bytes", prost_path),
         }
     }
 }

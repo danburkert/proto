@@ -29,6 +29,9 @@ pub mod extern_paths;
 pub mod packages;
 pub mod unittest;
 
+pub use prost;
+pub use prost_types;
+
 #[cfg(test)]
 mod bootstrap;
 #[cfg(test)]

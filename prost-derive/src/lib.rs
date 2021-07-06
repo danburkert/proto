@@ -12,7 +12,7 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::{
     punctuated::Punctuated, Data, DataEnum, DataStruct, DeriveInput, Expr, Fields, FieldsNamed,
-    FieldsUnnamed, Ident, Variant,
+    FieldsUnnamed, Ident, Lit, Meta, NestedMeta, Variant,
 };
 
 mod field;
@@ -20,6 +20,8 @@ use crate::field::Field;
 
 fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     let input: DeriveInput = syn::parse(input)?;
+
+    let prost_path = prost_path(&input)?;
 
     let ident = input.ident;
 
@@ -92,16 +94,16 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         bail!("message {} has fields with duplicate tags", ident);
     }
 
-    let encoded_len = fields
-        .iter()
-        .map(|&(ref field_ident, ref field)| field.encoded_len(quote!(self.#field_ident)));
+    let encoded_len = fields.iter().map(|&(ref field_ident, ref field)| {
+        field.encoded_len(quote!(self.#field_ident), &prost_path)
+    });
 
     let encode = fields
         .iter()
-        .map(|&(ref field_ident, ref field)| field.encode(quote!(self.#field_ident)));
+        .map(|&(ref field_ident, ref field)| field.encode(quote!(self.#field_ident), &prost_path));
 
     let merge = fields.iter().map(|&(ref field_ident, ref field)| {
-        let merge = field.merge(quote!(value));
+        let merge = field.merge(quote!(value), &prost_path);
         let tags = field
             .tags()
             .into_iter()
@@ -134,13 +136,13 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         .map(|&(ref field_ident, ref field)| field.clear(quote!(self.#field_ident)));
 
     let default = fields.iter().map(|&(ref field_ident, ref field)| {
-        let value = field.default();
+        let value = field.default(&prost_path);
         quote!(#field_ident: #value,)
     });
 
     let methods = fields
         .iter()
-        .flat_map(|&(ref field_ident, ref field)| field.methods(field_ident))
+        .flat_map(|&(ref field_ident, ref field)| field.methods(field_ident, &prost_path))
         .collect::<Vec<_>>();
     let methods = if methods.is_empty() {
         quote!()
@@ -154,7 +156,7 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     };
 
     let debugs = unsorted_fields.iter().map(|&(ref field_ident, ref field)| {
-        let wrapper = field.debug(quote!(self.#field_ident));
+        let wrapper = field.debug(quote!(self.#field_ident), &prost_path);
         let call = if is_struct {
             quote!(builder.field(stringify!(#field_ident), &wrapper))
         } else {
@@ -174,9 +176,9 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     };
 
     let expanded = quote! {
-        impl #impl_generics ::prost::Message for #ident #ty_generics #where_clause {
+        impl #impl_generics #prost_path ::Message for #ident #ty_generics #where_clause {
             #[allow(unused_variables)]
-            fn encode_raw<B>(&self, buf: &mut B) where B: ::prost::bytes::BufMut {
+            fn encode_raw<B>(&self, buf: &mut B) where B:  #prost_path ::bytes::BufMut {
                 #(#encode)*
             }
 
@@ -184,15 +186,15 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
             fn merge_field<B>(
                 &mut self,
                 tag: u32,
-                wire_type: ::prost::encoding::WireType,
+                wire_type: #prost_path ::encoding::WireType,
                 buf: &mut B,
-                ctx: ::prost::encoding::DecodeContext,
-            ) -> ::core::result::Result<(), ::prost::DecodeError>
-            where B: ::prost::bytes::Buf {
+                ctx: #prost_path ::encoding::DecodeContext,
+            ) -> ::core::result::Result<(), #prost_path ::DecodeError>
+            where B: #prost_path ::bytes::Buf {
                 #struct_name
                 match tag {
                     #(#merge)*
-                    _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+                    _ => #prost_path ::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
             }
 
@@ -330,6 +332,8 @@ pub fn enumeration(input: TokenStream) -> TokenStream {
 fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
     let input: DeriveInput = syn::parse(input)?;
 
+    let prost_path = prost_path(&input)?;
+
     let ident = input.ident;
 
     let variants = match input.data {
@@ -386,13 +390,13 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
     }
 
     let encode = fields.iter().map(|&(ref variant_ident, ref field)| {
-        let encode = field.encode(quote!(*value));
+        let encode = field.encode(quote!(*value), &prost_path);
         quote!(#ident::#variant_ident(ref value) => { #encode })
     });
 
     let merge = fields.iter().map(|&(ref variant_ident, ref field)| {
         let tag = field.tags()[0];
-        let merge = field.merge(quote!(value));
+        let merge = field.merge(quote!(value), &prost_path);
         quote! {
             #tag => {
                 match field {
@@ -410,12 +414,12 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
     });
 
     let encoded_len = fields.iter().map(|&(ref variant_ident, ref field)| {
-        let encoded_len = field.encoded_len(quote!(*value));
+        let encoded_len = field.encoded_len(quote!(*value), &prost_path);
         quote!(#ident::#variant_ident(ref value) => #encoded_len)
     });
 
     let debug = fields.iter().map(|&(ref variant_ident, ref field)| {
-        let wrapper = field.debug(quote!(*value));
+        let wrapper = field.debug(quote!(*value), &prost_path);
         quote!(#ident::#variant_ident(ref value) => {
             let wrapper = #wrapper;
             f.debug_tuple(stringify!(#variant_ident))
@@ -426,7 +430,7 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
 
     let expanded = quote! {
         impl #impl_generics #ident #ty_generics #where_clause {
-            pub fn encode<B>(&self, buf: &mut B) where B: ::prost::bytes::BufMut {
+            pub fn encode<B>(&self, buf: &mut B) where B: #prost_path ::bytes::BufMut {
                 match *self {
                     #(#encode,)*
                 }
@@ -435,11 +439,11 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
             pub fn merge<B>(
                 field: &mut ::core::option::Option<#ident #ty_generics>,
                 tag: u32,
-                wire_type: ::prost::encoding::WireType,
+                wire_type: #prost_path ::encoding::WireType,
                 buf: &mut B,
-                ctx: ::prost::encoding::DecodeContext,
-            ) -> ::core::result::Result<(), ::prost::DecodeError>
-            where B: ::prost::bytes::Buf {
+                ctx: #prost_path ::encoding::DecodeContext,
+            ) -> ::core::result::Result<(), #prost_path ::DecodeError>
+            where B: #prost_path ::bytes::Buf {
                 match tag {
                     #(#merge,)*
                     _ => unreachable!(concat!("invalid ", stringify!(#ident), " tag: {}"), tag),
@@ -469,4 +473,34 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
 #[proc_macro_derive(Oneof, attributes(prost))]
 pub fn oneof(input: TokenStream) -> TokenStream {
     try_oneof(input).unwrap()
+}
+
+fn prost_path(input: &DeriveInput) -> Result<proc_macro2::TokenStream, Error> {
+    let mut prost_path = quote! { ::prost };
+
+    for attr in &input.attrs {
+        if attr.path.is_ident("prost") {
+            if let Meta::List(meta) = attr.parse_meta()? {
+                for meta in meta.nested {
+                    match meta {
+                        NestedMeta::Meta(Meta::NameValue(name_value)) => {
+                            if name_value.path.is_ident("path") {
+                                match name_value.lit {
+                                    Lit::Str(s) => {
+                                        prost_path = s.parse()?;
+                                    }
+                                    _ => {
+                                        bail!("Expected string for prost path attribute");
+                                    }
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(prost_path)
 }

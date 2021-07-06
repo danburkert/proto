@@ -75,7 +75,7 @@ pub struct DescriptorProto {
 /// Nested message and enum types in `DescriptorProto`.
 pub mod descriptor_proto {
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct ExtensionRange {
+        pub struct ExtensionRange {
         /// Inclusive.
         #[prost(int32, optional, tag="1")]
         pub start: ::core::option::Option<i32>,
@@ -89,7 +89,7 @@ pub mod descriptor_proto {
     /// fields or extension ranges in the same message. Reserved ranges may
     /// not overlap.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct ReservedRange {
+        pub struct ReservedRange {
         /// Inclusive.
         #[prost(int32, optional, tag="1")]
         pub start: ::core::option::Option<i32>,
@@ -254,7 +254,7 @@ pub mod enum_descriptor_proto {
     /// is inclusive such that it can appropriately represent the entire int32
     /// domain.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct EnumReservedRange {
+        pub struct EnumReservedRange {
         /// Inclusive.
         #[prost(int32, optional, tag="1")]
         pub start: ::core::option::Option<i32>,
@@ -730,7 +730,7 @@ pub mod uninterpreted_option {
     /// E.g.,{ ["foo", false], ["bar.baz", true], ["qux", false] } represents
     /// "foo.(bar.baz).qux".
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct NamePart {
+        pub struct NamePart {
         #[prost(string, required, tag="1")]
         pub name_part: ::prost::alloc::string::String,
         #[prost(bool, required, tag="2")]
@@ -793,7 +793,7 @@ pub struct SourceCodeInfo {
 /// Nested message and enum types in `SourceCodeInfo`.
 pub mod source_code_info {
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct Location {
+        pub struct Location {
         /// Identifies which part of the FileDescriptorProto was defined at this
         /// location.
         ///
@@ -894,7 +894,7 @@ pub struct GeneratedCodeInfo {
 /// Nested message and enum types in `GeneratedCodeInfo`.
 pub mod generated_code_info {
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct Annotation {
+        pub struct Annotation {
         /// Identifies the element in the original source .proto file. This field
         /// is formatted the same as SourceCodeInfo.Location.path.
         #[prost(int32, repeated, tag="1")]

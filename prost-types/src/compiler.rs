@@ -67,7 +67,7 @@ pub struct CodeGeneratorResponse {
 pub mod code_generator_response {
     /// Represents a single generated file.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct File {
+        pub struct File {
         /// The file name, relative to the output directory.  The name must not
         /// contain "." or ".." components and must be relative, not be absolute (so,
         /// the file cannot lie outside the output directory).  "/" must be used as

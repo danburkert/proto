@@ -88,36 +88,36 @@ impl Field {
     }
 
     /// Returns a statement which encodes the field.
-    pub fn encode(&self, ident: TokenStream) -> TokenStream {
+    pub fn encode(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         match *self {
-            Field::Scalar(ref scalar) => scalar.encode(ident),
-            Field::Message(ref message) => message.encode(ident),
-            Field::Map(ref map) => map.encode(ident),
+            Field::Scalar(ref scalar) => scalar.encode(ident, prost_path),
+            Field::Message(ref message) => message.encode(ident, prost_path),
+            Field::Map(ref map) => map.encode(ident, prost_path),
             Field::Oneof(ref oneof) => oneof.encode(ident),
-            Field::Group(ref group) => group.encode(ident),
+            Field::Group(ref group) => group.encode(ident, prost_path),
         }
     }
 
     /// Returns an expression which evaluates to the result of merging a decoded
     /// value into the field.
-    pub fn merge(&self, ident: TokenStream) -> TokenStream {
+    pub fn merge(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         match *self {
-            Field::Scalar(ref scalar) => scalar.merge(ident),
-            Field::Message(ref message) => message.merge(ident),
-            Field::Map(ref map) => map.merge(ident),
+            Field::Scalar(ref scalar) => scalar.merge(ident, prost_path),
+            Field::Message(ref message) => message.merge(ident, prost_path),
+            Field::Map(ref map) => map.merge(ident, prost_path),
             Field::Oneof(ref oneof) => oneof.merge(ident),
-            Field::Group(ref group) => group.merge(ident),
+            Field::Group(ref group) => group.merge(ident, prost_path),
         }
     }
 
     /// Returns an expression which evaluates to the encoded length of the field.
-    pub fn encoded_len(&self, ident: TokenStream) -> TokenStream {
+    pub fn encoded_len(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         match *self {
-            Field::Scalar(ref scalar) => scalar.encoded_len(ident),
-            Field::Map(ref map) => map.encoded_len(ident),
-            Field::Message(ref msg) => msg.encoded_len(ident),
+            Field::Scalar(ref scalar) => scalar.encoded_len(ident, prost_path),
+            Field::Map(ref map) => map.encoded_len(ident, prost_path),
+            Field::Message(ref msg) => msg.encoded_len(ident, prost_path),
             Field::Oneof(ref oneof) => oneof.encoded_len(ident),
-            Field::Group(ref group) => group.encoded_len(ident),
+            Field::Group(ref group) => group.encoded_len(ident, prost_path),
         }
     }
 
@@ -132,18 +132,18 @@ impl Field {
         }
     }
 
-    pub fn default(&self) -> TokenStream {
+    pub fn default(&self, prost_path: &TokenStream) -> TokenStream {
         match *self {
-            Field::Scalar(ref scalar) => scalar.default(),
+            Field::Scalar(ref scalar) => scalar.default(prost_path),
             _ => quote!(::core::default::Default::default()),
         }
     }
 
     /// Produces the fragment implementing debug for the given field.
-    pub fn debug(&self, ident: TokenStream) -> TokenStream {
+    pub fn debug(&self, ident: TokenStream, prost_path: &TokenStream) -> TokenStream {
         match *self {
             Field::Scalar(ref scalar) => {
-                let wrapper = scalar.debug(quote!(ScalarWrapper));
+                let wrapper = scalar.debug(quote!(ScalarWrapper), prost_path);
                 quote! {
                     {
                         #wrapper
@@ -152,7 +152,7 @@ impl Field {
                 }
             }
             Field::Map(ref map) => {
-                let wrapper = map.debug(quote!(MapWrapper));
+                let wrapper = map.debug(quote!(MapWrapper), prost_path);
                 quote! {
                     {
                         #wrapper
@@ -164,10 +164,10 @@ impl Field {
         }
     }
 
-    pub fn methods(&self, ident: &Ident) -> Option<TokenStream> {
+    pub fn methods(&self, ident: &Ident, prost_path: &TokenStream) -> Option<TokenStream> {
         match *self {
             Field::Scalar(ref scalar) => scalar.methods(ident),
-            Field::Map(ref map) => map.methods(ident),
+            Field::Map(ref map) => map.methods(ident, prost_path),
             _ => None,
         }
     }
