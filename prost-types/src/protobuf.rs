@@ -516,6 +516,10 @@ pub struct MessageOptions {
     /// parser.
     #[prost(bool, optional, tag="7")]
     pub map_entry: ::core::option::Option<bool>,
+
+    #[prost(string, repeated, tag="10")]
+    pub type_attributes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+
     /// The parser stores options it doesn't recognize here. See above.
     #[prost(message, repeated, tag="999")]
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,

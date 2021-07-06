@@ -172,6 +172,11 @@ impl<'a> CodeGenerator<'a> {
 
         self.append_doc(&fq_message_name, None);
         self.append_type_attributes(&fq_message_name);
+        if let Some(type_attributes) = message.options.as_ref().map(|options| options.type_attributes.join("\n")) {
+            self.push_indent();
+            self.buf.push_str(&type_attributes);
+            self.buf.push('\n');
+        }
         self.push_indent();
         self.buf
             .push_str("#[derive(Clone, PartialEq, ::prost::Message)]\n");
