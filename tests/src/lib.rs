@@ -26,6 +26,7 @@ cfg_if! {
 }
 
 pub mod extern_paths;
+pub mod no_root_packages;
 pub mod packages;
 pub mod unittest;
 

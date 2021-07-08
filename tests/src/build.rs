@@ -114,14 +114,28 @@ fn main() {
     // Check that attempting to compile a .proto without a package declaration results in an error.
     config
         .compile_protos(&[src.join("no_package.proto")], includes)
-        .err()
+        .unwrap_err();
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR environment variable not set"));
+
+    // Check that attempting to compile a .proto without a package declaration succeeds.
+    let no_root_packages = out_dir.as_path().join("no_root_packages");
+
+    fs::create_dir_all(&no_root_packages).expect("failed to create prefix directory");
+    let mut no_root_packages_config = prost_build::Config::new();
+    no_root_packages_config
+        .out_dir(&no_root_packages)
+        .default_package_filename("__.default")
+        .compile_protos(
+            &[src.join("no_root_packages/widget_factory.proto")],
+            &[src.join("no_root_packages")],
+        )
         .unwrap();
 
-    let out_dir =
-        &PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR environment variable not set"))
-            .join("extern_paths");
-    fs::create_dir_all(out_dir).expect("failed to create prefix directory");
-    config.out_dir(out_dir);
+    let extern_paths = out_dir.as_path().join("extern_paths");
+    fs::create_dir_all(&extern_paths).expect("failed to create prefix directory");
+
+    config.out_dir(&extern_paths);
 
     // Compile some of the module examples as an extern path. The extern path syntax is edition
     // specific, since the way crate-internal fully qualified paths has changed.

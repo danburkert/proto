@@ -23,15 +23,9 @@ impl MessageGraph {
 
         for file in files {
             let package = format!(
-                ".{}",
-                file.package.as_ref().ok_or_else(|| {
-                    format!(
-                        "prost requires a package specifier in all .proto files \
-                         (https://developers.google.com/protocol-buffers/docs/proto#packages); \
-                         file with missing package specifier: {}",
-                        file.name.as_ref().map_or("(unknown)", String::as_ref),
-                    )
-                })?,
+                "{}{}",
+                if file.package.is_some() { "." } else { "" },
+                file.package.as_ref().map(String::as_str).unwrap_or("")
             );
             for msg in &file.message_type {
                 msg_graph.add_message(&package, msg);

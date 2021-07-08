@@ -230,6 +230,7 @@ pub struct Config {
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
     extern_paths: Vec<(String, String)>,
+    default_package_filename: Option<String>,
     protoc_args: Vec<OsString>,
     disable_comments: PathMap<()>,
 }
@@ -658,6 +659,17 @@ impl Config {
         self
     }
 
+    /// Configures what filename protobufs with no package definition are written to.
+    ///
+    /// If unset protobuf compilation will fail if there are any proto files without a package definition.
+    pub fn default_package_filename<S>(&mut self, filename: S) -> &mut Self
+    where
+        S: Into<String>,
+    {
+        self.default_package_filename = Some(filename.into());
+        self
+    }
+
     /// Add an argument to the `protoc` protobuf compilation invocation.
     ///
     /// # Example `build.rs`
@@ -772,7 +784,16 @@ impl Config {
 
         let modules = self.generate(file_descriptor_set.file)?;
         for (module, content) in modules {
-            let mut filename = module.join(".");
+            let mut filename = if module.is_empty() {
+                self.default_package_filename.as_ref().ok_or_else(||Error::new(ErrorKind::InvalidInput,
+                    "prost requires a package specifier in all .proto files \
+                     (https://developers.google.com/protocol-buffers/docs/proto#packages); \
+                     unless Config::default_package_filename has been called to set the filename to use.",
+                ))?.clone()
+            } else {
+                module.join(".")
+            };
+
             filename.push_str(".rs");
 
             let output_path = target.join(&filename);
@@ -846,6 +867,7 @@ impl default::Default for Config {
             strip_enum_prefix: true,
             out_dir: None,
             extern_paths: Vec::new(),
+            default_package_filename: None,
             protoc_args: Vec::new(),
             disable_comments: PathMap::default(),
         }

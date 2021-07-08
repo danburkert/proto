@@ -65,7 +65,7 @@ impl<'a> CodeGenerator<'a> {
 
         let mut code_gen = CodeGenerator {
             config,
-            package: file.package.unwrap(),
+            package: file.package.unwrap_or_else(String::new),
             source_info,
             syntax,
             message_graph,
@@ -117,7 +117,12 @@ impl<'a> CodeGenerator<'a> {
         debug!("  message: {:?}", message.name());
 
         let message_name = message.name().to_string();
-        let fq_message_name = format!(".{}.{}", self.package, message.name());
+        let fq_message_name = format!(
+            "{}{}.{}",
+            if self.package.is_empty() { "" } else { "." },
+            self.package,
+            message.name()
+        );
 
         // Skip external types.
         if self.extern_paths.resolve_ident(&fq_message_name).is_some() {
@@ -584,7 +589,12 @@ impl<'a> CodeGenerator<'a> {
         // Skip external types.
         let enum_name = &desc.name();
         let enum_values = &desc.value;
-        let fq_enum_name = format!(".{}.{}", self.package, enum_name);
+        let fq_enum_name = format!(
+            "{}{}.{}",
+            if self.package.is_empty() { "" } else { "." },
+            self.package,
+            enum_name
+        );
         if self.extern_paths.resolve_ident(&fq_enum_name).is_some() {
             return;
         }
@@ -768,6 +778,13 @@ impl<'a> CodeGenerator<'a> {
         }
 
         let mut local_path = self.package.split('.').peekable();
+
+        // If no package is specified the start of the package name will be '.'
+        // and split will return an empty string ("") which breaks resolution
+        // The fix to this is to ignore the first item if it is empty.
+        if local_path.peek().map_or(false, |s| s.is_empty()) {
+            local_path.next();
+        }
 
         let mut ident_path = pb_ident[1..].split('.');
         let ident_type = ident_path.next_back().unwrap();
