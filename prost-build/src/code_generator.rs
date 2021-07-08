@@ -81,6 +81,12 @@ impl<'a> CodeGenerator<'a> {
             code_gen.package
         );
 
+        // this should only be called once and not per file
+        // if cfg!(feature = "use-wasm-bindgen") {
+            code_gen.buf
+                .push_str("use wasm_bindgen::prelude::*;\n\n");
+        // }
+
         code_gen.path.push(4);
         for (idx, message) in file.message_type.into_iter().enumerate() {
             code_gen.path.push(idx as i32);
@@ -173,6 +179,11 @@ impl<'a> CodeGenerator<'a> {
         self.append_doc(&fq_message_name, None);
         self.append_type_attributes(&fq_message_name);
         self.push_indent();
+        // if cfg!(feature = "use-wasm-bindgen") {
+            self.buf
+                .push_str("#[wasm_bindgen]\n");
+            self.push_indent();
+        // }
         self.buf
             .push_str("#[derive(Clone, PartialEq, ::prost::Message)]\n");
         self.push_indent();
@@ -381,7 +392,13 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str("\")]\n");
         self.append_field_attributes(fq_message_name, field.name());
         self.push_indent();
-        self.buf.push_str("pub ");
+        // see https://github.com/rustwasm/wasm-bindgen/issues/439
+        // pub not working in structs for vectors
+        if !repeated
+            // && cfg!(feature = "use-wasm-bindgen") 
+        {
+            self.buf.push_str("pub ");
+        }
         self.buf.push_str(&to_snake(field.name()));
         self.buf.push_str(": ");
         if repeated {
@@ -495,6 +512,12 @@ impl<'a> CodeGenerator<'a> {
 
         let oneof_name = format!("{}.{}", fq_message_name, oneof.name());
         self.append_type_attributes(&oneof_name);
+        // wasm-bindgen does not support enums holding data
+        // this might need a lot more changes to work
+
+        // self.push_indent();
+        // self.buf
+        //     .push_str("#[wasm_bindgen]\n");
         self.push_indent();
         self.buf
             .push_str("#[derive(Clone, PartialEq, ::prost::Oneof)]\n");
@@ -592,6 +615,11 @@ impl<'a> CodeGenerator<'a> {
         self.append_doc(&fq_enum_name, None);
         self.append_type_attributes(&fq_enum_name);
         self.push_indent();
+        // if cfg!(feature = "use-wasm-bindgen") {
+            self.buf
+                .push_str("#[wasm_bindgen]\n");
+            self.push_indent();
+        // }
         self.buf.push_str(
             "#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]\n",
         );
@@ -725,6 +753,12 @@ impl<'a> CodeGenerator<'a> {
         self.package.push_str(module);
 
         self.depth += 1;
+
+        // if cfg!(feature = "use-wasm-bindgen") {
+            self.push_indent();
+            self.buf
+                .push_str("use wasm_bindgen::prelude::*;\n\n");
+        // }
     }
 
     fn pop_mod(&mut self) {

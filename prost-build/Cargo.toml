@@ -22,9 +22,14 @@ petgraph = { version = "0.5", default-features = false }
 prost = { version = "0.8.0", path = "..", default-features = false }
 prost-types = { version = "0.8.0", path = "../prost-types", default-features = false }
 tempfile = "3"
+wasm-bindgen = { version = "0.2", optional = true }
 
 [build-dependencies]
 which = { version = "4", default-features = false }
 
 [dev-dependencies]
 env_logger = { version = "0.8", default-features = false }
+
+[features]
+default = []
+use-wasm-bindgen = []
