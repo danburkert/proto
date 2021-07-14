@@ -117,6 +117,7 @@ impl<'a> CodeGenerator<'a> {
         debug!("  message: {:?}", message.name());
 
         let message_name = message.name().to_string();
+        let package_name = self.package.clone();
         let fq_message_name = format!(".{}.{}", self.package, message.name());
 
         // Skip external types.
@@ -175,6 +176,9 @@ impl<'a> CodeGenerator<'a> {
         self.push_indent();
         self.buf
             .push_str("#[derive(Clone, PartialEq, ::prost::Message)]\n");
+        self.push_indent();
+        self.buf
+            .push_str(format!("#[prost(package=\"{}\")]\n", package_name).as_str());
         self.push_indent();
         self.buf.push_str("pub struct ");
         self.buf.push_str(&to_upper_camel(&message_name));

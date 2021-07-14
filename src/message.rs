@@ -192,6 +192,12 @@ where
     }
 }
 
+pub trait MessageDescriptor: Message + 'static {
+    fn message_name(&self) -> &'static str;
+    fn package_name(&self) -> &'static str;
+    fn type_url(&self) -> &'static str;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

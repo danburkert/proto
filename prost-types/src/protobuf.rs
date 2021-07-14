@@ -1,12 +1,14 @@
 /// The protocol compiler can output a FileDescriptorSet containing the .proto
 /// files it parses.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct FileDescriptorSet {
     #[prost(message, repeated, tag="1")]
     pub file: ::prost::alloc::vec::Vec<FileDescriptorProto>,
 }
 /// Describes a complete .proto file.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct FileDescriptorProto {
     /// file name, relative to root of source tree
     #[prost(string, optional, tag="1")]
@@ -48,6 +50,7 @@ pub struct FileDescriptorProto {
 }
 /// Describes a message type.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct DescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -75,6 +78,7 @@ pub struct DescriptorProto {
 /// Nested message and enum types in `DescriptorProto`.
 pub mod descriptor_proto {
     #[derive(Clone, PartialEq, ::prost::Message)]
+    #[prost(package="google.protobuf.DescriptorProto")]
     pub struct ExtensionRange {
         /// Inclusive.
         #[prost(int32, optional, tag="1")]
@@ -89,6 +93,7 @@ pub mod descriptor_proto {
     /// fields or extension ranges in the same message. Reserved ranges may
     /// not overlap.
     #[derive(Clone, PartialEq, ::prost::Message)]
+    #[prost(package="google.protobuf.DescriptorProto")]
     pub struct ReservedRange {
         /// Inclusive.
         #[prost(int32, optional, tag="1")]
@@ -99,6 +104,7 @@ pub mod descriptor_proto {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct ExtensionRangeOptions {
     /// The parser stores options it doesn't recognize here. See above.
     #[prost(message, repeated, tag="999")]
@@ -106,6 +112,7 @@ pub struct ExtensionRangeOptions {
 }
 /// Describes a field within a message.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct FieldDescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -220,6 +227,7 @@ pub mod field_descriptor_proto {
 }
 /// Describes a oneof.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct OneofDescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -228,6 +236,7 @@ pub struct OneofDescriptorProto {
 }
 /// Describes an enum type.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct EnumDescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -254,6 +263,7 @@ pub mod enum_descriptor_proto {
     /// is inclusive such that it can appropriately represent the entire int32
     /// domain.
     #[derive(Clone, PartialEq, ::prost::Message)]
+    #[prost(package="google.protobuf.EnumDescriptorProto")]
     pub struct EnumReservedRange {
         /// Inclusive.
         #[prost(int32, optional, tag="1")]
@@ -265,6 +275,7 @@ pub mod enum_descriptor_proto {
 }
 /// Describes a value within an enum.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct EnumValueDescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -275,6 +286,7 @@ pub struct EnumValueDescriptorProto {
 }
 /// Describes a service.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct ServiceDescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -285,6 +297,7 @@ pub struct ServiceDescriptorProto {
 }
 /// Describes a method of a service.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct MethodDescriptorProto {
     #[prost(string, optional, tag="1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
@@ -336,6 +349,7 @@ pub struct MethodDescriptorProto {
 //   to automatically assign option numbers.
 
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct FileOptions {
     /// Sets the Java package where classes generated from this .proto will be
     /// placed.  By default, the proto package is used, but this is often
@@ -461,6 +475,7 @@ pub mod file_options {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct MessageOptions {
     /// Set true to use the old proto1 MessageSet wire format for extensions.
     /// This is provided for backwards-compatibility with the MessageSet wire
@@ -521,6 +536,7 @@ pub struct MessageOptions {
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct FieldOptions {
     /// The ctype option instructs the C++ code generator to use a different
     /// representation of the field than it normally would.  See the specific
@@ -613,12 +629,14 @@ pub mod field_options {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct OneofOptions {
     /// The parser stores options it doesn't recognize here. See above.
     #[prost(message, repeated, tag="999")]
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct EnumOptions {
     /// Set this option to true to allow mapping different tag names to the same
     /// value.
@@ -635,6 +653,7 @@ pub struct EnumOptions {
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct EnumValueOptions {
     /// Is this enum value deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
@@ -647,6 +666,7 @@ pub struct EnumValueOptions {
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct ServiceOptions {
     // Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
     //   framework.  We apologize for hoarding these numbers to ourselves, but
@@ -664,6 +684,7 @@ pub struct ServiceOptions {
     pub uninterpreted_option: ::prost::alloc::vec::Vec<UninterpretedOption>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct MethodOptions {
     // Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
     //   framework.  We apologize for hoarding these numbers to ourselves, but
@@ -704,6 +725,7 @@ pub mod method_options {
 /// or produced by Descriptor::CopyTo()) will never have UninterpretedOptions
 /// in them.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct UninterpretedOption {
     #[prost(message, repeated, tag="2")]
     pub name: ::prost::alloc::vec::Vec<uninterpreted_option::NamePart>,
@@ -730,6 +752,7 @@ pub mod uninterpreted_option {
     /// E.g.,{ ["foo", false], ["bar.baz", true], ["qux", false] } represents
     /// "foo.(bar.baz).qux".
     #[derive(Clone, PartialEq, ::prost::Message)]
+    #[prost(package="google.protobuf.UninterpretedOption")]
     pub struct NamePart {
         #[prost(string, required, tag="1")]
         pub name_part: ::prost::alloc::string::String,
@@ -743,6 +766,7 @@ pub mod uninterpreted_option {
 /// Encapsulates information about the original source file from which a
 /// FileDescriptorProto was generated.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct SourceCodeInfo {
     /// A Location identifies a piece of source code in a .proto file which
     /// corresponds to a particular definition.  This information is intended
@@ -793,6 +817,7 @@ pub struct SourceCodeInfo {
 /// Nested message and enum types in `SourceCodeInfo`.
 pub mod source_code_info {
     #[derive(Clone, PartialEq, ::prost::Message)]
+    #[prost(package="google.protobuf.SourceCodeInfo")]
     pub struct Location {
         /// Identifies which part of the FileDescriptorProto was defined at this
         /// location.
@@ -885,6 +910,7 @@ pub mod source_code_info {
 /// file. A GeneratedCodeInfo message is associated with only one generated
 /// source file, but may contain references to different source .proto files.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct GeneratedCodeInfo {
     /// An Annotation connects some span of text in generated code to an element
     /// of its generating .proto file.
@@ -894,6 +920,7 @@ pub struct GeneratedCodeInfo {
 /// Nested message and enum types in `GeneratedCodeInfo`.
 pub mod generated_code_info {
     #[derive(Clone, PartialEq, ::prost::Message)]
+    #[prost(package="google.protobuf.GeneratedCodeInfo")]
     pub struct Annotation {
         /// Identifies the element in the original source .proto file. This field
         /// is formatted the same as SourceCodeInfo.Location.path.
@@ -997,6 +1024,7 @@ pub mod generated_code_info {
 ///     }
 ///
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Any {
     /// A URL/resource name that uniquely identifies the type of the serialized
     /// protocol buffer message. This string must contain at least
@@ -1035,6 +1063,7 @@ pub struct Any {
 /// `SourceContext` represents information about the source of a
 /// protobuf element, like the file in which it is defined.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct SourceContext {
     /// The path-qualified name of the .proto file that contained the associated
     /// protobuf element.  For example: `"google/protobuf/source_context.proto"`.
@@ -1043,6 +1072,7 @@ pub struct SourceContext {
 }
 /// A protocol buffer message type.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Type {
     /// The fully qualified message name.
     #[prost(string, tag="1")]
@@ -1065,6 +1095,7 @@ pub struct Type {
 }
 /// A single field of a message type.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Field {
     /// The field type.
     #[prost(enumeration="field::Kind", tag="1")]
@@ -1160,6 +1191,7 @@ pub mod field {
 }
 /// Enum type definition.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Enum {
     /// Enum type name.
     #[prost(string, tag="1")]
@@ -1179,6 +1211,7 @@ pub struct Enum {
 }
 /// Enum value definition.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct EnumValue {
     /// Enum value name.
     #[prost(string, tag="1")]
@@ -1193,6 +1226,7 @@ pub struct EnumValue {
 /// A protocol buffer option, which can be attached to a message, field,
 /// enumeration, etc.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Option {
     /// The option's name. For protobuf built-in options (options defined in
     /// descriptor.proto), this is the short name. For example, `"map_entry"`.
@@ -1226,6 +1260,7 @@ pub enum Syntax {
 /// this message itself. See https://cloud.google.com/apis/design/glossary for
 /// detailed terminology.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Api {
     /// The fully qualified name of this interface, including package name
     /// followed by the interface's simple name.
@@ -1273,6 +1308,7 @@ pub struct Api {
 }
 /// Method represents a method of an API interface.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Method {
     /// The simple name of this method.
     #[prost(string, tag="1")]
@@ -1375,6 +1411,7 @@ pub struct Method {
 ///       ...
 ///     }
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Mixin {
     /// The fully qualified name of the interface which is included.
     #[prost(string, tag="1")]
@@ -1445,6 +1482,7 @@ pub struct Mixin {
 ///
 ///
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Duration {
     /// Signed seconds of the span of time. Must be from -315,576,000,000
     /// to +315,576,000,000 inclusive. Note: these bounds are computed from:
@@ -1660,6 +1698,7 @@ pub struct Duration {
 /// request should verify the included field paths, and return an
 /// `INVALID_ARGUMENT` error if any path is unmappable.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct FieldMask {
     /// The set of field mask paths.
     #[prost(string, repeated, tag="1")]
@@ -1674,6 +1713,7 @@ pub struct FieldMask {
 ///
 /// The JSON representation for `Struct` is JSON object.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Struct {
     /// Unordered map of dynamically typed values.
     #[prost(btree_map="string, message", tag="1")]
@@ -1686,6 +1726,7 @@ pub struct Struct {
 ///
 /// The JSON representation for `Value` is JSON value.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Value {
     /// The kind of value.
     #[prost(oneof="value::Kind", tags="1, 2, 3, 4, 5, 6")]
@@ -1720,6 +1761,7 @@ pub mod value {
 ///
 /// The JSON representation for `ListValue` is JSON array.
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct ListValue {
     /// Repeated field of dynamically typed values.
     #[prost(message, repeated, tag="1")]
@@ -1829,6 +1871,7 @@ pub enum NullValue {
 ///
 ///
 #[derive(Clone, PartialEq, ::prost::Message)]
+#[prost(package="google.protobuf")]
 pub struct Timestamp {
     /// Represents seconds of UTC time since Unix epoch
     /// 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to

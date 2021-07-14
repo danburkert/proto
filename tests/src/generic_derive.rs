@@ -1,4 +1,4 @@
-pub trait CustomType: prost::Message + Default {}
+pub trait CustomType: prost::Message + Default + 'static {}
 
 impl CustomType for u64 {}
 
