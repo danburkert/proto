@@ -127,11 +127,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use log::trace;
+pub use path::Matcher;
 use prost::Message;
 use prost_types::{FileDescriptorProto, FileDescriptorSet};
 
 pub use crate::ast::{Comments, Method, Service};
 use crate::code_generator::CodeGenerator;
+pub use crate::code_generator::FieldAttributes;
 use crate::extern_paths::ExternPaths;
 use crate::ident::to_snake;
 use crate::message_graph::MessageGraph;
@@ -222,16 +224,16 @@ impl Default for BytesType {
 pub struct Config {
     file_descriptor_set_path: Option<PathBuf>,
     service_generator: Option<Box<dyn ServiceGenerator>>,
-    map_type: PathMap<MapType>,
-    bytes_type: PathMap<BytesType>,
-    type_attributes: PathMap<String>,
-    field_attributes: PathMap<String>,
+    map_type: PathMap<MapType, ()>,
+    bytes_type: PathMap<BytesType, ()>,
+    type_attributes: PathMap<String, ()>,
+    field_attributes: PathMap<String, FieldAttributes>,
     prost_types: bool,
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
     extern_paths: Vec<(String, String)>,
     protoc_args: Vec<OsString>,
-    disable_comments: PathMap<()>,
+    disable_comments: PathMap<(), ()>,
 }
 
 impl Config {
@@ -296,7 +298,7 @@ impl Config {
         self.map_type.clear();
         for matcher in paths {
             self.map_type
-                .insert(matcher.as_ref().to_string(), MapType::BTreeMap);
+                .insert(matcher.as_ref().to_string().into(), MapType::BTreeMap);
         }
         self
     }
@@ -357,7 +359,7 @@ impl Config {
         self.bytes_type.clear();
         for matcher in paths {
             self.bytes_type
-                .insert(matcher.as_ref().to_string(), BytesType::Bytes);
+                .insert(matcher.as_ref().to_string().into(), BytesType::Bytes);
         }
         self
     }
@@ -366,7 +368,7 @@ impl Config {
     ///
     /// # Arguments
     ///
-    /// **`path`** - a patch matching any number of fields. These fields get the attribute.
+    /// **`path`** - a path matching any number of fields. These fields get the attribute.
     /// For details about matching fields see [`btree_map`](#method.btree_map).
     ///
     /// **`attribute`** - an arbitrary string that'll be placed before each matched field. The
@@ -390,8 +392,45 @@ impl Config {
         P: AsRef<str>,
         A: AsRef<str>,
     {
+        self.field_attribute_matcher(path.as_ref(), attribute)
+    }
+
+    /// Add additional attribute to matched fields.
+    ///
+    /// # Arguments
+    ///
+    /// **`matcher`** - a [Matcher] matching any number of fields. These fields get the attribute.
+    /// For details about matching paths see [`btree_map`](#method.btree_map).
+    /// For details about matching attributes see [FieldAttributes].
+    ///
+    /// **`attribute`** - an arbitrary string that'll be placed before each matched field. The
+    /// expected usage are additional attributes, usually in concert with whole-type
+    /// attributes set with [`type_attribute`](method.type_attribute), but it is not
+    /// checked and anything can be put there.
+    ///
+    /// Note that the calls to this method are cumulative ‒ if multiple paths from multiple calls
+    /// match the same field, the field gets all the corresponding attributes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # let mut config = prost_build::Config::new();
+    /// // tell serde to deserialize optional fields to their default value
+    /// config.field_attribute_matcher(
+    ///   prost_build::Matcher::new(".", prost_build::FieldAttributes::new(None, Some(true))),
+    ///   "#[serde(default)]"
+    /// );
+    /// ```
+    pub fn field_attribute_matcher<A>(
+        &mut self,
+        matcher: impl Into<Matcher<FieldAttributes>>,
+        attribute: A,
+    ) -> &mut Self
+    where
+        A: AsRef<str>,
+    {
         self.field_attributes
-            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+            .insert(matcher.into(), attribute.as_ref().to_string());
         self
     }
 
@@ -439,8 +478,10 @@ impl Config {
         P: AsRef<str>,
         A: AsRef<str>,
     {
-        self.type_attributes
-            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self.type_attributes.insert(
+            path.as_ref().to_string().into(),
+            attribute.as_ref().to_string(),
+        );
         self
     }
 
@@ -485,7 +526,7 @@ impl Config {
         self.disable_comments.clear();
         for matcher in paths {
             self.disable_comments
-                .insert(matcher.as_ref().to_string(), ());
+                .insert(matcher.as_ref().to_string().into(), ());
         }
         self
     }

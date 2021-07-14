@@ -18,12 +18,71 @@ use crate::ast::{Comments, Method, Service};
 use crate::extern_paths::ExternPaths;
 use crate::ident::{to_snake, to_upper_camel};
 use crate::message_graph::MessageGraph;
+use crate::path::MatcherAttributes;
 use crate::{BytesType, Config, MapType};
 
 #[derive(PartialEq)]
 enum Syntax {
     Proto2,
     Proto3,
+}
+
+/// Attributes of protobuf fields that can be matched against.
+///
+/// If the given value is `None`, then any input will be matched. Otherwise, the contents will be compared using [Eq].
+///
+/// # Examples
+///
+/// ```rust
+/// # use prost_build::FieldAttributes;
+/// // matches any attributes
+/// FieldAttributes::new(None, None);
+///
+/// // matches if `repeated` is true
+/// FieldAttributes::new(Some(true), None);
+///
+/// // matches if `repeated` is false
+/// FieldAttributes::new(Some(false), None);
+///
+/// // matches if `repeated` is false and `optional` is true
+/// FieldAttributes::new(Some(false), Some(true));
+///
+/// ```
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct FieldAttributes {
+    repeated: Option<bool>,
+    optional: Option<bool>,
+}
+
+impl FieldAttributes {
+    pub fn new(repeated: Option<bool>, optional: Option<bool>) -> Self {
+        Self { repeated, optional }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(None, None)
+    }
+}
+
+impl MatcherAttributes for FieldAttributes {
+    fn matches(&self, input: &Self) -> bool {
+        let match_repeat = match_if_present(self.repeated, input.repeated);
+        let match_optional = match_if_present(self.optional, input.optional);
+        match_repeat && match_optional
+    }
+}
+
+fn match_if_present<T>(matcher: Option<T>, input: Option<T>) -> bool
+where
+    T: Eq,
+{
+    match (matcher, input) {
+        // if the matcher is empty, then any input matches
+        (None, _) => true,
+        // if the contents are the same, the input matches
+        (Some(matcher_value), Some(input_value)) if matcher_value == input_value => true,
+        _ => false,
+    }
 }
 
 pub struct CodeGenerator<'a> {
@@ -259,13 +318,18 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    fn append_field_attributes(&mut self, fq_message_name: &str, field_name: &str) {
+    fn append_field_attributes(
+        &mut self,
+        fq_message_name: &str,
+        field_name: &str,
+        field_attributes: &FieldAttributes,
+    ) {
         assert_eq!(b'.', fq_message_name.as_bytes()[0]);
         // TODO: this clone is dirty, but expedious.
         if let Some(attributes) = self
             .config
             .field_attributes
-            .get_field(fq_message_name, field_name)
+            .get_field_with_attributes(fq_message_name, field_name, Some(field_attributes))
             .cloned()
         {
             self.push_indent();
@@ -379,7 +443,11 @@ impl<'a> CodeGenerator<'a> {
         }
 
         self.buf.push_str("\")]\n");
-        self.append_field_attributes(fq_message_name, field.name());
+        self.append_field_attributes(
+            fq_message_name,
+            field.name(),
+            &FieldAttributes::new(Some(repeated), Some(optional)),
+        );
         self.push_indent();
         self.buf.push_str("pub ");
         self.buf.push_str(&to_snake(field.name()));
@@ -438,7 +506,7 @@ impl<'a> CodeGenerator<'a> {
             value_tag,
             field.number()
         ));
-        self.append_field_attributes(fq_message_name, field.name());
+        self.append_field_attributes(fq_message_name, field.name(), &FieldAttributes::empty());
         self.push_indent();
         self.buf.push_str(&format!(
             "pub {}: {}<{}, {}>,\n",
@@ -471,7 +539,7 @@ impl<'a> CodeGenerator<'a> {
                 .map(|&(ref field, _)| field.number())
                 .join(", ")
         ));
-        self.append_field_attributes(fq_message_name, oneof.name());
+        self.append_field_attributes(fq_message_name, oneof.name(), &FieldAttributes::empty());
         self.push_indent();
         self.buf.push_str(&format!(
             "pub {}: ::core::option::Option<{}>,\n",
@@ -519,7 +587,7 @@ impl<'a> CodeGenerator<'a> {
                 ty_tag,
                 field.number()
             ));
-            self.append_field_attributes(&oneof_name, field.name());
+            self.append_field_attributes(&oneof_name, field.name(), &FieldAttributes::empty());
 
             self.push_indent();
             let ty = self.resolve_type(&field, fq_message_name);
@@ -636,7 +704,7 @@ impl<'a> CodeGenerator<'a> {
         prefix_to_strip: Option<String>,
     ) {
         self.append_doc(fq_enum_name, Some(value.name()));
-        self.append_field_attributes(fq_enum_name, &value.name());
+        self.append_field_attributes(fq_enum_name, &value.name(), &FieldAttributes::empty());
         self.push_indent();
         let name = to_upper_camel(value.name());
         let name_unprefixed = match prefix_to_strip {
@@ -1066,5 +1134,17 @@ mod tests {
         assert_eq!(strip_enum_prefix("Foo", "Foo"), "Foo");
         assert_eq!(strip_enum_prefix("Foo", "Bar"), "Bar");
         assert_eq!(strip_enum_prefix("Foo", "Foo1"), "Foo1");
+    }
+
+    #[test]
+    fn test_match_if_present() {
+        assert_eq!(match_if_present(None, Some(true)), true);
+        assert_eq!(match_if_present(None, Some(false)), true);
+        assert_eq!(match_if_present(Some(true), None), false);
+        assert_eq!(match_if_present(Some(false), None), false);
+        assert_eq!(match_if_present(Some(true), Some(true)), true);
+        assert_eq!(match_if_present(Some(false), Some(false)), true);
+        assert_eq!(match_if_present(Some(true), Some(false)), false);
+        assert_eq!(match_if_present(Some(false), Some(true)), false);
     }
 }
