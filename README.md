@@ -1,7 +1,7 @@
-![continuous integration](https://github.com/danburkert/prost/workflows/continuous%20integration/badge.svg)
+![continuous integration](https://github.com/tokio-rs/prost/workflows/continuous%20integration/badge.svg)
 [![Documentation](https://docs.rs/prost/badge.svg)](https://docs.rs/prost/)
 [![Crate](https://img.shields.io/crates/v/prost.svg)](https://crates.io/crates/prost)
-[![Dependency Status](https://deps.rs/repo/github/danburkert/prost/status.svg)](https://deps.rs/repo/github/danburkert/prost)
+[![Dependency Status](https://deps.rs/repo/github/tokio-rs/prost/status.svg)](https://deps.rs/repo/github/tokio-rs/prost)
 
 # *PROST!*
 
@@ -29,9 +29,9 @@ First, add `prost` and its public dependencies to your `Cargo.toml`:
 
 ```
 [dependencies]
-prost = "0.7"
+prost = "0.8"
 # Only necessary if using Protobuf well-known types:
-prost-types = "0.7"
+prost-types = "0.8"
 ```
 
 The recommended way to add `.proto` compilation to a Cargo project is to use the

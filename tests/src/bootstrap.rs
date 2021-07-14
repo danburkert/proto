@@ -40,7 +40,7 @@ fn bootstrap() {
                 protobuf.join("timestamp.proto"),
                 protobuf.join("type.proto"),
             ],
-            &[],
+            &[""],
         )
         .unwrap();
 

@@ -59,6 +59,18 @@ pub trait Message: Debug + Send + Sync {
         Ok(())
     }
 
+    #[cfg(feature = "std")]
+    /// Encodes the message to a newly allocated buffer.
+    fn encode_to_vec(&self) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        let mut buf = Vec::with_capacity(self.encoded_len());
+
+        self.encode_raw(&mut buf);
+        buf
+    }
+
     /// Encodes the message with a length-delimiter to a buffer.
     ///
     /// An error will be returned if the buffer does not have sufficient capacity.
@@ -76,6 +88,20 @@ pub trait Message: Debug + Send + Sync {
         encode_varint(len as u64, buf);
         self.encode_raw(buf);
         Ok(())
+    }
+
+    #[cfg(feature = "std")]
+    /// Encodes the message with a length-delimiter to a newly allocated buffer.
+    fn encode_length_delimited_to_vec(&self) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        let len = self.encoded_len();
+        let mut buf = Vec::with_capacity(len + encoded_len_varint(len as u64));
+
+        encode_varint(len as u64, &mut buf);
+        self.encode_raw(&mut buf);
+        buf
     }
 
     /// Decodes an instance of the message from a buffer.

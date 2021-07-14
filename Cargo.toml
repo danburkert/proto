@@ -1,9 +1,12 @@
 [package]
 name = "prost"
-version = "0.7.0"
-authors = ["Dan Burkert <dan@danburkert.com>"]
+version = "0.8.0"
+authors = [
+    "Dan Burkert <dan@danburkert.com>",
+    "Tokio Contributors <team@tokio.rs>",
+]
 license = "Apache-2.0"
-repository = "https://github.com/danburkert/prost"
+repository = "https://github.com/tokio-rs/prost"
 documentation = "https://docs.rs/prost"
 readme = "README.md"
 description = "A Protocol Buffers implementation for the Rust Language."
@@ -26,6 +29,8 @@ exclude = [
   # The fuzz crate can't be compiled or tested without the 'cargo fuzz' command,
   # so exclude it from normal builds.
   "fuzz",
+  # Same counts for the afl fuzz targets
+  "afl",
 ]
 
 [lib]
@@ -39,7 +44,7 @@ std = []
 
 [dependencies]
 bytes = { version = "1", default-features = false }
-prost-derive = { version = "0.7.0", path = "prost-derive", optional = true }
+prost-derive = { version = "0.8.0", path = "prost-derive", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"

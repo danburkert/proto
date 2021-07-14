@@ -1,0 +1,18 @@
+[package]
+name = "fuzz-target-proto3"
+version = "0.1.0"
+authors = ["Prost developers"]
+edition = "2018"
+
+[[bin]]
+name = "fuzz-target"
+path = "src/main.rs"
+
+[[bin]]
+name = "reproduce"
+path = "src/reproduce.rs"
+
+[dependencies]
+afl = "0.4"
+protobuf = { path = "../../protobuf/" }
+tests = { path = "../../tests/" }

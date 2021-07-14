@@ -67,8 +67,7 @@ fn main() -> Result<()> {
             .iter()
             .map(|proto| datasets_include_dir.join(proto)),
     );
-    prost_build::compile_protos(&benchmark_protos, &[benchmarks_include_dir.to_path_buf()])
-        .unwrap();
+    prost_build::compile_protos(&benchmark_protos, &[benchmarks_include_dir]).unwrap();
 
     let conformance_include_dir = include_dir.join("conformance");
     prost_build::compile_protos(
@@ -91,7 +90,7 @@ fn main() -> Result<()> {
                 test_includes.join("test_messages_proto3.proto"),
                 test_includes.join("unittest.proto"),
             ],
-            &[include_dir.to_path_buf()],
+            &[include_dir],
         )
         .unwrap();
 

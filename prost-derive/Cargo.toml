@@ -1,9 +1,12 @@
 [package]
 name = "prost-derive"
-version = "0.7.0"
-authors = ["Dan Burkert <dan@danburkert.com>"]
+version = "0.8.0"
+authors = [
+    "Dan Burkert <dan@danburkert.com>",
+    "Tokio Contributors <team@tokio.rs>",
+]
 license = "Apache-2.0"
-repository = "https://github.com/danburkert/prost"
+repository = "https://github.com/tokio-rs/prost"
 documentation = "https://docs.rs/prost-derive"
 readme = "README.md"
 description = "A Protocol Buffers implementation for the Rust Language."

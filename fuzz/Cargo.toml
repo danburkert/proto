@@ -1,7 +1,10 @@
 [package]
 name = "fuzz"
 version = "0.0.0"
-authors = ["Dan Burkert <dan@danburkert.com>"]
+authors = [
+    "Dan Burkert <dan@danburkert.com>",
+    "Tokio Contributors <team@tokio.rs>",
+]
 publish = false
 edition = "2018"
 

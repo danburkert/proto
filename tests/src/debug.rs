@@ -52,7 +52,7 @@ fn basic() {
 }
 
 /*
-TODO(danburkert/prost#56):
+TODO(tokio-rs/prost#56):
 
 /// A special case with a tuple struct
 #[test]
