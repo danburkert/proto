@@ -1,0 +1,15 @@
+[package]
+name = "protoc-gen-prost"
+version = "0.7.0"
+authors = ["Tokio Contributors <team@tokio.rs>"]
+license = "Apache-2.0"
+repository = "https://github.com/tokio-rs/prost"
+documentation = "https://docs.rs/prost-build"
+readme = "README.md"
+description = "A Protocol Buffers implementation for the Rust Language."
+edition = "2018"
+
+[dependencies]
+prost = { version = "0.7.0", path = "..", default-features = false }
+prost-build = { version = "0.7.0", path = "../prost-build", default-features = false }
+prost-types = { version = "0.7.0", path = "../prost-types", default-features = false }

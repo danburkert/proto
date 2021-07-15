@@ -21,6 +21,7 @@ members = [
   "prost-derive",
   "prost-types",
   "protobuf",
+  "protoc-gen-prost",
   "tests",
   "tests-2015",
   "tests-no-std",

@@ -113,10 +113,11 @@ mod ast;
 mod code_generator;
 mod extern_paths;
 mod ident;
+mod lib_generator;
 mod message_graph;
 mod path;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::default;
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -126,14 +127,17 @@ use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use itertools::Itertools;
 use log::trace;
 use prost::Message;
-use prost_types::{FileDescriptorProto, FileDescriptorSet};
+use prost_types::compiler::code_generator_response::File;
+use prost_types::{compiler::*, FileDescriptorProto, FileDescriptorSet};
 
 pub use crate::ast::{Comments, Method, Service};
 use crate::code_generator::CodeGenerator;
 use crate::extern_paths::ExternPaths;
 use crate::ident::to_snake;
+use crate::lib_generator::{LibGenerator, Mod};
 use crate::message_graph::MessageGraph;
 use crate::path::PathMap;
 
@@ -216,6 +220,31 @@ impl Default for BytesType {
     }
 }
 
+const BTREE_MAP: &str = "btree_map";
+const BYTES: &str = "bytes";
+const FIELD_ATTR: &str = "field_attr";
+const TYPE_ATTR: &str = "type_attr";
+const COMPILE_WELL_KNOWN_TYPES: &str = "compile_well_known_types";
+const DISABLE_COMMENTS: &str = "disable_comments";
+const EXTERN_PATH: &str = "extern_path";
+const RETAIN_ENUM_PREFIX: &str = "retain_enum_prefix";
+const FILE_DESCRIPTOR_SET: &str = "file_descriptor_set";
+const MOD_RS: &str = "mod_rs";
+const GEN_CRATE: &str = "gen_crate";
+pub const PROTOC_OPTS: [&str; 11] = [
+    BTREE_MAP,
+    BYTES,
+    FIELD_ATTR,
+    TYPE_ATTR,
+    COMPILE_WELL_KNOWN_TYPES,
+    DISABLE_COMMENTS,
+    EXTERN_PATH,
+    RETAIN_ENUM_PREFIX,
+    FILE_DESCRIPTOR_SET,
+    MOD_RS,
+    GEN_CRATE,
+];
+
 /// Configuration options for Protobuf code generation.
 ///
 /// This configuration builder can be used to set non-default code generation options.
@@ -232,12 +261,55 @@ pub struct Config {
     extern_paths: Vec<(String, String)>,
     protoc_args: Vec<OsString>,
     disable_comments: PathMap<()>,
+    mod_rs: bool,
+    manifest_tpl: Option<PathBuf>,
 }
 
 impl Config {
     /// Creates a new code generator configuration with default options.
     pub fn new() -> Config {
         Config::default()
+    }
+
+    /// Creates a new code generator configuration with default options, overriden from parameters
+    /// passed to the protoc command line.
+    ///
+    /// Format is opt1=value,opt2=value
+    pub fn new_from_opts(opts: &str, log_unknown: bool) -> Config {
+        let mut cfg = Config::new();
+        cfg.opts(opts, log_unknown);
+        cfg
+    }
+
+    /// Configure the code generator with the inlined options. To be used by protoc plugins.
+    ///
+    /// Format is opt1=value,opt2=value
+    pub fn opts(&mut self, opts: &str, log_unknown: bool) -> &mut Config {
+        let opts = opts
+            .split(',')
+            .map(|opt| opt.split('=').collect::<Vec<_>>());
+        for opt in opts {
+            match opt.as_slice() {
+                [""] => (),
+                [BTREE_MAP, v] => self.map_type.insert(v.to_string(), MapType::BTreeMap),
+                [BYTES, v] => self.bytes_type.insert(v.to_string(), BytesType::Bytes),
+                [FIELD_ATTR, k, v] => self.field_attributes.insert(k.to_string(), v.to_string()),
+                [TYPE_ATTR, k, v] => self.type_attributes.insert(k.to_string(), v.to_string()),
+                [COMPILE_WELL_KNOWN_TYPES] => self.prost_types = false,
+                [DISABLE_COMMENTS, v] => self.disable_comments.insert(v.to_string(), ()),
+                [EXTERN_PATH, k, v] => self.extern_paths.push((k.to_string(), v.to_string())),
+                [RETAIN_ENUM_PREFIX] => self.strip_enum_prefix = false,
+                [FILE_DESCRIPTOR_SET] => {
+                    self.file_descriptor_set_path = Some("file_descriptor_set".into())
+                }
+                [FILE_DESCRIPTOR_SET, v] => self.file_descriptor_set_path = Some(v.into()),
+                [MOD_RS] => self.mod_rs = true,
+                [GEN_CRATE, v] => self.manifest_tpl = Some(v.into()),
+                _ if log_unknown => eprintln!("prost: Unknown option `{}`", opt.join("=")),
+                _ => (),
+            }
+        }
+        self
     }
 
     /// Configure the code generator to generate Rust [`BTreeMap`][1] fields for Protobuf
@@ -680,6 +752,26 @@ impl Config {
         self
     }
 
+    /// Generate a `mod.rs` file suitable for a full module.
+    pub fn mod_rs(&mut self) -> &mut Self {
+        self.mod_rs = true;
+        self
+    }
+
+    /// Generate a full crate based on a `Cargo.toml` template.
+    ///
+    /// The output directory will contain the crate and not the built files directly, in `gen/`
+    /// folder. Each `proto` package will get its own feature flag, with proper dependency solving.
+    /// The `Cargo.toml` must contain `{{ features }}` string where all crate features will be
+    /// inserted.
+    pub fn generate_crate<P>(&mut self, manifest_template: P) -> &mut Self
+    where
+        P: Into<PathBuf>,
+    {
+        self.manifest_tpl = Some(manifest_template.into());
+        self
+    }
+
     /// Compile `.proto` files into Rust files during a Cargo build with additional code generator
     /// configuration options.
     ///
@@ -772,8 +864,7 @@ impl Config {
 
         let modules = self.generate(file_descriptor_set.file)?;
         for (module, content) in modules {
-            let mut filename = module.join(".");
-            filename.push_str(".rs");
+            let filename = self.filename(&module);
 
             let output_path = target.join(&filename);
 
@@ -793,9 +884,74 @@ impl Config {
         Ok(())
     }
 
+    /// Compile `.proto` code into Rust code from a protoc build with additional code generator
+    /// configuration options.
+    pub fn compile_request(&mut self, req: CodeGeneratorRequest) -> CodeGeneratorResponse {
+        // Optionally output the file descriptor set
+        let set = self.file_descriptor_set_path.clone().map(|path| {
+            let name = self.filename(&vec![path.to_str().unwrap().to_owned()]);
+
+            let set = FileDescriptorSet {
+                file: req.proto_file.clone(),
+            };
+            let mut buf = Vec::new();
+            set.encode(&mut buf).unwrap();
+
+            let buf = buf.into_iter().chunks(16);
+            let lines = buf
+                .into_iter()
+                .map(|chunk| chunk.map(|byte| format!("0x{:02x}", byte)).join(", "))
+                .join(",\n    ");
+            let content =
+                "pub const FILE_DESCRIPTOR_SET: &[u8] = &[\n    ".to_owned() + &lines + ",\n];\n";
+
+            vec![File {
+                name: Some(name),
+                content: Some(content),
+                ..Default::default()
+            }]
+        });
+
+        match self.generate(req.proto_file) {
+            Ok(modules) => {
+                let f = modules.into_iter().map(|(module, content)| File {
+                    name: Some(self.filename(&module)),
+                    insertion_point: None,
+                    content: Some(content),
+                    generated_code_info: None,
+                });
+                CodeGeneratorResponse {
+                    error: None,
+                    supported_features: None,
+                    file: f.chain(set.unwrap_or_default()).collect(),
+                }
+            }
+            Err(e) => CodeGeneratorResponse {
+                error: Some(e.to_string()),
+                supported_features: None,
+                file: Vec::new(),
+            },
+        }
+    }
+
+    fn filename(&self, module: &Module) -> String {
+        let (prefix, suffix) = match (self.manifest_tpl.is_some(), module.as_slice()) {
+            (true, [n]) if n == "lib" => ("src/", ".rs"),
+            (true, [n]) if n == "Cargo.toml" => ("", ""),
+            (true, _) => ("gen/", ".rs"),
+            (false, _) => ("", ".rs"),
+        };
+        prefix.to_owned() + &module.join(".") + suffix
+    }
+
     fn generate(&mut self, files: Vec<FileDescriptorProto>) -> Result<HashMap<Module, String>> {
         let mut modules = HashMap::new();
         let mut packages = HashMap::new();
+        let deps = self
+            .manifest_tpl
+            .is_some()
+            .then(|| self.build_deps(&files))
+            .unwrap_or_default();
 
         let message_graph = MessageGraph::new(&files)
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
@@ -821,6 +977,20 @@ impl Config {
             }
         }
 
+        if self.mod_rs || self.manifest_tpl.is_some() {
+            let mut mods = Mod::default();
+            for (module, _) in &modules {
+                mods.push(module);
+            }
+            let name = self.manifest_tpl.is_some().then(|| "lib").unwrap_or("mod");
+            let mut buf = modules.entry(vec![name.to_owned()]).or_default();
+            LibGenerator::generate_librs(self, &mods, &mut buf);
+        }
+        if let Some(tpl) = self.manifest_tpl.clone() {
+            let mut buf = modules.entry(vec!["Cargo.toml".to_owned()]).or_default();
+            LibGenerator::generate_manifest(self, tpl, deps, &mut buf);
+        }
+
         Ok(modules)
     }
 
@@ -830,6 +1000,26 @@ impl Config {
             .filter(|s| !s.is_empty())
             .map(to_snake)
             .collect()
+    }
+
+    fn build_deps(&self, files: &[FileDescriptorProto]) -> BTreeMap<String, BTreeSet<String>> {
+        let names: HashMap<_, _> = files
+            .iter()
+            .map(|file| (file.name().to_owned(), file.package().to_owned()))
+            .collect();
+        let mut deps: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+        for file in files {
+            let names = file
+                .dependency
+                .iter()
+                .filter_map(|dep| names.get(dep))
+                .filter(|dep| *dep != file.package())
+                .map(|s| s.clone());
+            deps.entry(file.package().to_owned())
+                .or_default()
+                .extend(names);
+        }
+        deps
     }
 }
 
@@ -848,6 +1038,8 @@ impl default::Default for Config {
             extern_paths: Vec::new(),
             protoc_args: Vec::new(),
             disable_comments: PathMap::default(),
+            mod_rs: false,
+            manifest_tpl: None,
         }
     }
 }
