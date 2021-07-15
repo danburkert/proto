@@ -1688,32 +1688,35 @@ pub struct Struct {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
     /// The kind of value.
-    #[prost(oneof="value::Kind", tags="1, 2, 3, 4, 5, 6")]
-    pub kind: ::core::option::Option<value::Kind>,
+    #[prost(oneof="value::oneof::Kind", tags="1, 2, 3, 4, 5, 6")]
+    pub kind: ::core::option::Option<value::oneof::Kind>,
 }
 /// Nested message and enum types in `Value`.
 pub mod value {
-    /// The kind of value.
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Kind {
-        /// Represents a null value.
-        #[prost(enumeration="super::NullValue", tag="1")]
-        NullValue(i32),
-        /// Represents a double value.
-        #[prost(double, tag="2")]
-        NumberValue(f64),
-        /// Represents a string value.
-        #[prost(string, tag="3")]
-        StringValue(::prost::alloc::string::String),
-        /// Represents a boolean value.
-        #[prost(bool, tag="4")]
-        BoolValue(bool),
-        /// Represents a structured value.
-        #[prost(message, tag="5")]
-        StructValue(super::Struct),
-        /// Represents a repeated `Value`.
-        #[prost(message, tag="6")]
-        ListValue(super::ListValue),
+    /// Nested message and enum types in `oneof`.
+    pub mod oneof {
+        /// The kind of value.
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Kind {
+            /// Represents a null value.
+            #[prost(enumeration="super::super::NullValue", tag="1")]
+            NullValue(i32),
+            /// Represents a double value.
+            #[prost(double, tag="2")]
+            NumberValue(f64),
+            /// Represents a string value.
+            #[prost(string, tag="3")]
+            StringValue(::prost::alloc::string::String),
+            /// Represents a boolean value.
+            #[prost(bool, tag="4")]
+            BoolValue(bool),
+            /// Represents a structured value.
+            #[prost(message, tag="5")]
+            StructValue(super::super::Struct),
+            /// Represents a repeated `Value`.
+            #[prost(message, tag="6")]
+            ListValue(super::super::ListValue),
+        }
     }
 }
 /// `ListValue` is a wrapper around a repeated field of values.

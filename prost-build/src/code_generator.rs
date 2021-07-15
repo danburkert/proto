@@ -235,6 +235,10 @@ impl<'a> CodeGenerator<'a> {
             }
             self.path.pop();
 
+            let has_oneofs = message.oneof_decl.len() > 0;
+            if has_oneofs {
+                self.push_mod("oneof");
+            }
             for (idx, oneof) in message.oneof_decl.into_iter().enumerate() {
                 let idx = idx as i32;
                 // optional fields create a synthetic oneof that we want to skip
@@ -243,6 +247,9 @@ impl<'a> CodeGenerator<'a> {
                     None => continue,
                 };
                 self.append_oneof(&fq_message_name, oneof, idx, fields);
+            }
+            if has_oneofs {
+                self.pop_mod();
             }
 
             self.pop_mod();
@@ -457,7 +464,7 @@ impl<'a> CodeGenerator<'a> {
         fields: &[(FieldDescriptorProto, usize)],
     ) {
         let name = format!(
-            "{}::{}",
+            "{}::oneof::{}",
             to_snake(message_name),
             to_upper_camel(oneof.name())
         );

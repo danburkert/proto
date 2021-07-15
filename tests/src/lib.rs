@@ -407,11 +407,11 @@ mod tests {
             use crate::recursive_oneof::{a, A, C};
 
             let mut a = Box::new(A {
-                kind: Some(a::Kind::C(C {})),
+                kind: Some(a::oneof::Kind::C(C {})),
             });
             for _ in 0..depth {
                 a = Box::new(A {
-                    kind: Some(a::Kind::A(a)),
+                    kind: Some(a::oneof::Kind::A(a)),
                 });
             }
 
@@ -493,9 +493,9 @@ mod tests {
     fn test_recursive_oneof() {
         use crate::recursive_oneof::{a, A, B, C};
         let _ = A {
-            kind: Some(a::Kind::B(Box::new(B {
+            kind: Some(a::oneof::Kind::B(Box::new(B {
                 a: Some(Box::new(A {
-                    kind: Some(a::Kind::C(C {})),
+                    kind: Some(a::oneof::Kind::C(C {})),
                 })),
             }))),
         };
@@ -573,29 +573,33 @@ mod tests {
     fn test_group_oneof() {
         let msg = groups::OneofGroup {
             i1: Some(42),
-            field: Some(groups::oneof_group::Field::S2("foo".to_string())),
+            field: Some(groups::oneof_group::oneof::Field::S2("foo".to_string())),
         };
         check_message(&msg);
 
         let msg = groups::OneofGroup {
             i1: Some(42),
-            field: Some(groups::oneof_group::Field::G(groups::oneof_group::G {
-                i2: None,
-                s1: "foo".to_string(),
-                t1: None,
-            })),
+            field: Some(groups::oneof_group::oneof::Field::G(
+                groups::oneof_group::G {
+                    i2: None,
+                    s1: "foo".to_string(),
+                    t1: None,
+                },
+            )),
         };
         check_message(&msg);
 
         let msg = groups::OneofGroup {
             i1: Some(42),
-            field: Some(groups::oneof_group::Field::G(groups::oneof_group::G {
-                i2: Some(99),
-                s1: "foo".to_string(),
-                t1: Some(groups::Test1 {
-                    groupa: Some(groups::test1::GroupA { i2: None }),
-                }),
-            })),
+            field: Some(groups::oneof_group::oneof::Field::G(
+                groups::oneof_group::G {
+                    i2: Some(99),
+                    s1: "foo".to_string(),
+                    t1: Some(groups::Test1 {
+                        groupa: Some(groups::test1::GroupA { i2: None }),
+                    }),
+                },
+            )),
         };
         check_message(&msg);
 
@@ -606,7 +610,7 @@ mod tests {
     fn test_proto3_presence() {
         let msg = proto3::presence::A {
             b: Some(42),
-            foo: Some(proto3::presence::a::Foo::C(13)),
+            foo: Some(proto3::presence::a::oneof::Foo::C(13)),
         };
 
         check_message(&msg);

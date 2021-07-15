@@ -224,7 +224,7 @@ avoid an infinite sized struct.
 
 Oneof fields convert to a Rust enum. Protobuf `oneof`s types are not named, so
 `prost` uses the name of the `oneof` field for the resulting Rust enum, and
-defines the enum in a module under the struct. For example, a `proto3` message
+defines the enum in a child `oneof` module under the struct. For example, a `proto3` message
 such as:
 
 ```proto
@@ -240,12 +240,14 @@ generates the following Rust[1]:
 
 ```rust
 pub struct Foo {
-    pub widget: Option<foo::Widget>,
+    pub widget: Option<foo::oneof::Widget>,
 }
 pub mod foo {
-    pub enum Widget {
-        Quux(i32),
-        Bar(String),
+    pub mod oneof {
+        pub enum Widget {
+          Quux(i32),
+          Bar(String),
+        }
     }
 }
 ```

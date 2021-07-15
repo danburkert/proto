@@ -40,6 +40,10 @@ fn main() {
         "Foo.Custom.OneOfAttrs.Msg.field",
         "#[derive(Eq, PartialOrd, Ord)]",
     );
+    config.type_attribute(
+        "Foo.Custom.OneOfAttrs.Msg.Field",
+        "#[derive(Eq, PartialOrd, Ord)]",
+    );
     config.field_attribute("Foo.Custom.Attrs.AnotherEnum.C", "/// The C docs");
     config.field_attribute("Foo.Custom.Attrs.AnotherEnum.D", "/// The D docs");
     config.field_attribute("Foo.Custom.Attrs.Msg.field.a", "/// Oneof A docs");
