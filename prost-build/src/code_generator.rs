@@ -39,6 +39,13 @@ pub struct CodeGenerator<'a> {
 }
 
 impl<'a> CodeGenerator<'a> {
+    fn to_upper_camel(&self, value: &str) -> String {
+        if self.config.preserve_original_names {
+            value.into()
+        } else {
+            to_upper_camel(value)
+        }
+    }
     pub fn generate(
         config: &mut Config,
         message_graph: &MessageGraph,
@@ -177,7 +184,7 @@ impl<'a> CodeGenerator<'a> {
             .push_str("#[derive(Clone, PartialEq, ::prost::Message)]\n");
         self.push_indent();
         self.buf.push_str("pub struct ");
-        self.buf.push_str(&to_upper_camel(&message_name));
+        self.buf.push_str(&self.to_upper_camel(&message_name));
         self.buf.push_str(" {\n");
 
         self.depth += 1;
@@ -354,7 +361,7 @@ impl<'a> CodeGenerator<'a> {
                 }
                 self.buf.push_str("\\\"");
             } else if type_ == Type::Enum {
-                let enum_value = to_upper_camel(default);
+                let enum_value = self.to_upper_camel(default);
                 let stripped_prefix = if self.config.strip_enum_prefix {
                     // Field types are fully qualified, so we extract
                     // the last segment and strip it from the left
@@ -365,7 +372,7 @@ impl<'a> CodeGenerator<'a> {
                         .and_then(|ty| ty.split('.').last())
                         .unwrap();
 
-                    strip_enum_prefix(&to_upper_camel(&enum_type), &enum_value)
+                    strip_enum_prefix(&self.to_upper_camel(&enum_type), &enum_value)
                 } else {
                     &enum_value
                 };
@@ -459,7 +466,7 @@ impl<'a> CodeGenerator<'a> {
         let name = format!(
             "{}::{}",
             to_snake(message_name),
-            to_upper_camel(oneof.name())
+            self.to_upper_camel(oneof.name())
         );
         self.append_doc(fq_message_name, None);
         self.push_indent();
@@ -500,7 +507,7 @@ impl<'a> CodeGenerator<'a> {
             .push_str("#[derive(Clone, PartialEq, ::prost::Oneof)]\n");
         self.push_indent();
         self.buf.push_str("pub enum ");
-        self.buf.push_str(&to_upper_camel(oneof.name()));
+        self.buf.push_str(&self.to_upper_camel(oneof.name()));
         self.buf.push_str(" {\n");
 
         self.path.push(2);
@@ -539,12 +546,12 @@ impl<'a> CodeGenerator<'a> {
             if boxed {
                 self.buf.push_str(&format!(
                     "{}(::prost::alloc::boxed::Box<{}>),\n",
-                    to_upper_camel(field.name()),
+                    self.to_upper_camel(field.name()),
                     ty
                 ));
             } else {
                 self.buf
-                    .push_str(&format!("{}({}),\n", to_upper_camel(field.name()), ty));
+                    .push_str(&format!("{}({}),\n", self.to_upper_camel(field.name()), ty));
             }
         }
         self.depth -= 1;
@@ -599,7 +606,7 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str("#[repr(i32)]\n");
         self.push_indent();
         self.buf.push_str("pub enum ");
-        self.buf.push_str(&to_upper_camel(desc.name()));
+        self.buf.push_str(&self.to_upper_camel(desc.name()));
         self.buf.push_str(" {\n");
 
         let mut numbers = HashSet::new();
@@ -615,7 +622,7 @@ impl<'a> CodeGenerator<'a> {
 
             self.path.push(idx as i32);
             let stripped_prefix = if self.config.strip_enum_prefix {
-                Some(to_upper_camel(&enum_name))
+                Some(self.to_upper_camel(&enum_name))
             } else {
                 None
             };
@@ -638,7 +645,7 @@ impl<'a> CodeGenerator<'a> {
         self.append_doc(fq_enum_name, Some(value.name()));
         self.append_field_attributes(fq_enum_name, &value.name());
         self.push_indent();
-        let name = to_upper_camel(value.name());
+        let name = self.to_upper_camel(value.name());
         let name_unprefixed = match prefix_to_strip {
             Some(prefix) => strip_enum_prefix(&prefix, &name),
             None => &name,
@@ -691,7 +698,7 @@ impl<'a> CodeGenerator<'a> {
         self.path.pop();
 
         let service = Service {
-            name: to_upper_camel(&name),
+            name: self.to_upper_camel(&name),
             proto_name: name,
             package: self.package.clone(),
             comments,
@@ -782,7 +789,7 @@ impl<'a> CodeGenerator<'a> {
         local_path
             .map(|_| "super".to_string())
             .chain(ident_path.map(to_snake))
-            .chain(iter::once(to_upper_camel(ident_type)))
+            .chain(iter::once(self.to_upper_camel(ident_type)))
             .join("::")
     }
 

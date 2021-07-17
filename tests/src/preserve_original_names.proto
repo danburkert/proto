@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package preserve_original_names;
+
+enum IPVersion {
+  IP_V4 = 0;
+  IP_V6 = 1;
+}
+
+message IPPrefix {
+  IPVersion ip_version = 1;
+  string prefix = 2;
+  uint32 len = 3;
+}
+
+enum Enum1_2 {
+  A1_2 = 0;
+}
+enum Enum12 {
+  A12 = 0;
+}
+
+message NoConflictsInEnumNames {
+  Enum1_2 field1 = 1;
+  Enum12 field2 = 2;
+}
