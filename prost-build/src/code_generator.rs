@@ -171,6 +171,7 @@ impl<'a> CodeGenerator<'a> {
             });
 
         self.append_doc(&fq_message_name, None);
+        self.append_message_attributes(&fq_message_name);
         self.append_type_attributes(&fq_message_name);
         self.push_indent();
         self.buf
@@ -268,6 +269,15 @@ impl<'a> CodeGenerator<'a> {
             .get_field(fq_message_name, field_name)
             .cloned()
         {
+            self.push_indent();
+            self.buf.push_str(&attributes);
+            self.buf.push('\n');
+        }
+    }
+
+    fn append_message_attributes(&mut self, fq_message_name: &str) {
+        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+        if let Some(attributes) = self.config.message_attributes.get(fq_message_name).cloned() {
             self.push_indent();
             self.buf.push_str(&attributes);
             self.buf.push('\n');

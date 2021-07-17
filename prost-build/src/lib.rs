@@ -226,6 +226,7 @@ pub struct Config {
     bytes_type: PathMap<BytesType>,
     type_attributes: PathMap<String>,
     field_attributes: PathMap<String>,
+    message_attributes: PathMap<String>,
     prost_types: bool,
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
@@ -440,6 +441,17 @@ impl Config {
         A: AsRef<str>,
     {
         self.type_attributes
+            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    /// Add additional attribute to matched messages.
+    pub fn message_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    where
+        P: AsRef<str>,
+        A: AsRef<str>,
+    {
+        self.message_attributes
             .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
         self
     }
@@ -842,6 +854,7 @@ impl default::Default for Config {
             bytes_type: PathMap::default(),
             type_attributes: PathMap::default(),
             field_attributes: PathMap::default(),
+            message_attributes: PathMap::default(),
             prost_types: true,
             strip_enum_prefix: true,
             out_dir: None,
@@ -864,6 +877,7 @@ impl fmt::Debug for Config {
             .field("bytes_type", &self.bytes_type)
             .field("type_attributes", &self.type_attributes)
             .field("field_attributes", &self.field_attributes)
+            .field("message_attributes", &self.message_attributes)
             .field("prost_types", &self.prost_types)
             .field("strip_enum_prefix", &self.strip_enum_prefix)
             .field("out_dir", &self.out_dir)
