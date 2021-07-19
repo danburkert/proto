@@ -232,6 +232,7 @@ pub struct Config {
     extern_paths: Vec<(String, String)>,
     protoc_args: Vec<OsString>,
     disable_comments: PathMap<()>,
+    skip_protoc_run: bool,
 }
 
 impl Config {
@@ -635,6 +636,25 @@ impl Config {
         self
     }
 
+    /// In combination with with `file_descriptor_set_path`, this can be used to provide a file
+    /// descriptor set as an input file, rather than having prost-build generate the file by calling
+    /// protoc.  Prost-build does require that the descriptor set was generated with
+    /// --include_source_info.
+    ///
+    /// In `build.rs`:
+    ///
+    /// ```rust
+    /// # let mut config = prost_build::Config::new();
+    /// config.file_descriptor_set_path("path/from/build/system")
+    ///     .skip_protoc_run()
+    ///     .compile_protos(&["src/items.proto"], &["src/"]);
+    /// ```
+    ///
+    pub fn skip_protoc_run(&mut self) -> &mut Self {
+        self.skip_protoc_run = true;
+        self
+    }
+
     /// Configures the code generator to not strip the enum name from variant names.
     ///
     /// Protobuf enum definitions commonly include the enum name as a prefix of every variant name.
@@ -687,6 +707,8 @@ impl Config {
     /// specify non-default code generation options. See that function for more information about
     /// the arguments and generated outputs.
     ///
+    /// The `protos` and `includes` arguments are ignored if `skip_protoc_run` is specified.
+    ///
     /// # Example `build.rs`
     ///
     /// ```rust,no_run
@@ -718,48 +740,55 @@ impl Config {
         // [1]: http://doc.crates.io/build-script.html#outputs-of-the-build-script
 
         let tmp;
-        let file_descriptor_set_path = match self.file_descriptor_set_path.clone() {
-            Some(file_descriptor_set_path) => file_descriptor_set_path,
-            None => {
-                tmp = tempfile::Builder::new().prefix("prost-build").tempdir()?;
-                tmp.path().join("prost-descriptor-set")
+        let file_descriptor_set_path = if let Some(path) = &self.file_descriptor_set_path {
+            path.clone()
+        } else {
+            if self.skip_protoc_run {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    "file_descriptor_set_path is required with skip_protoc_run",
+                ));
             }
+            tmp = tempfile::Builder::new().prefix("prost-build").tempdir()?;
+            tmp.path().join("prost-descriptor-set")
         };
 
-        let mut cmd = Command::new(protoc());
-        cmd.arg("--include_imports")
-            .arg("--include_source_info")
-            .arg("-o")
-            .arg(&file_descriptor_set_path);
+        if !self.skip_protoc_run {
+            let mut cmd = Command::new(protoc());
+            cmd.arg("--include_imports")
+                .arg("--include_source_info")
+                .arg("-o")
+                .arg(&file_descriptor_set_path);
 
-        for include in includes {
-            cmd.arg("-I").arg(include.as_ref());
-        }
+            for include in includes {
+                cmd.arg("-I").arg(include.as_ref());
+            }
 
-        // Set the protoc include after the user includes in case the user wants to
-        // override one of the built-in .protos.
-        cmd.arg("-I").arg(protoc_include());
+            // Set the protoc include after the user includes in case the user wants to
+            // override one of the built-in .protos.
+            cmd.arg("-I").arg(protoc_include());
 
-        for arg in &self.protoc_args {
-            cmd.arg(arg);
-        }
+            for arg in &self.protoc_args {
+                cmd.arg(arg);
+            }
 
-        for proto in protos {
-            cmd.arg(proto.as_ref());
-        }
+            for proto in protos {
+                cmd.arg(proto.as_ref());
+            }
 
-        let output = cmd.output().map_err(|error| {
+            let output = cmd.output().map_err(|error| {
             Error::new(
                 error.kind(),
                 format!("failed to invoke protoc (hint: https://docs.rs/prost-build/#sourcing-protoc): {}", error),
             )
         })?;
 
-        if !output.status.success() {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("protoc failed: {}", String::from_utf8_lossy(&output.stderr)),
-            ));
+            if !output.status.success() {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!("protoc failed: {}", String::from_utf8_lossy(&output.stderr)),
+                ));
+            }
         }
 
         let buf = fs::read(file_descriptor_set_path)?;
@@ -848,6 +877,7 @@ impl default::Default for Config {
             extern_paths: Vec::new(),
             protoc_args: Vec::new(),
             disable_comments: PathMap::default(),
+            skip_protoc_run: false,
         }
     }
 }
