@@ -1,4 +1,6 @@
+use lazy_static::lazy_static;
 use prost_types::source_code_info::Location;
+use regex::Regex;
 
 /// Comments on a Protobuf item.
 #[derive(Debug)]
@@ -53,7 +55,7 @@ impl Comments {
                     buf.push_str("    ");
                 }
                 buf.push_str("//");
-                buf.push_str(line);
+                buf.push_str(&Self::sanitize_line(line));
                 buf.push('\n');
             }
             buf.push('\n');
@@ -65,7 +67,7 @@ impl Comments {
                 buf.push_str("    ");
             }
             buf.push_str("///");
-            buf.push_str(line);
+            buf.push_str(&Self::sanitize_line(line));
             buf.push('\n');
         }
 
@@ -83,9 +85,23 @@ impl Comments {
                 buf.push_str("    ");
             }
             buf.push_str("///");
-            buf.push_str(line);
+            buf.push_str(&Self::sanitize_line(line));
             buf.push('\n');
         }
+    }
+
+    /// Sanitizes the line for rustdoc by performing the following operations:
+    ///     - escape urls as <http://foo.com>
+    ///     - escape `[` & `]`
+    fn sanitize_line(line: &str) -> String {
+        lazy_static! {
+            static ref RULE_URL: Regex = Regex::new(r"https?://\S+").unwrap();
+            static ref RULE_BRACKETS: Regex = Regex::new(r"(\[)([^\]]+)(])").unwrap();
+        }
+
+        let mut s = RULE_URL.replace_all(line, r"<$0>").to_string();
+        s = RULE_BRACKETS.replace_all(&s, r"\$1$2\$3").to_string();
+        s
     }
 }
 
@@ -129,4 +145,87 @@ pub struct Method {
     pub client_streaming: bool,
     /// Identifies if server streams multiple server messages.
     pub server_streaming: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_comment_append_with_indent_sanitizes_comment_doc_url() {
+        struct TestCases {
+            name: &'static str,
+            input: String,
+            expected: String,
+        }
+
+        let tests = vec![
+            TestCases {
+                name: "valid_http",
+                input: "See https://www.rust-lang.org/".to_string(),
+                expected: "///See <https://www.rust-lang.org/>\n".to_string(),
+            },
+            TestCases {
+                name: "valid_https",
+                input: "See https://www.rust-lang.org/".to_string(),
+                expected: "///See <https://www.rust-lang.org/>\n".to_string(),
+            },
+            TestCases {
+                name: "invalid",
+                input: "See note://abc".to_string(),
+                expected: "///See note://abc\n".to_string(),
+            },
+        ];
+        for t in tests {
+            let input = Comments {
+                leading_detached: vec![],
+                leading: vec![],
+                trailing: vec![t.input],
+            };
+
+            let mut actual = "".to_string();
+            input.append_with_indent(0, &mut actual);
+
+            assert_eq!(t.expected, actual, "failed {}", t.name);
+        }
+    }
+
+    #[test]
+    fn test_comment_append_with_indent_sanitizes_square_brackets() {
+        struct TestCases {
+            name: &'static str,
+            input: String,
+            expected: String,
+        }
+
+        let tests = vec![
+            TestCases {
+                name: "valid_brackets",
+                input: "foo [bar] baz".to_string(),
+                expected: "///foo \\[bar\\] baz\n".to_string(),
+            },
+            TestCases {
+                name: "invalid_start_bracket",
+                input: "foo [= baz".to_string(),
+                expected: "///foo [= baz\n".to_string(),
+            },
+            TestCases {
+                name: "invalid_end_bracket",
+                input: "foo =] baz".to_string(),
+                expected: "///foo =] baz\n".to_string(),
+            },
+        ];
+        for t in tests {
+            let input = Comments {
+                leading_detached: vec![],
+                leading: vec![],
+                trailing: vec![t.input],
+            };
+
+            let mut actual = "".to_string();
+            input.append_with_indent(0, &mut actual);
+
+            assert_eq!(t.expected, actual, "failed {}", t.name);
+        }
+    }
 }
