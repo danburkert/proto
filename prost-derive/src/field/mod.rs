@@ -1,16 +1,20 @@
 mod group;
 mod map;
 mod message;
+mod msg_fns;
 mod oneof;
 mod scalar;
 
 use std::fmt;
 use std::slice;
 
-use anyhow::{bail, Error};
+use anyhow::{bail, ensure, Error};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Ident, Lit, LitBool, Meta, MetaList, MetaNameValue, NestedMeta};
+use syn::{Attribute, Ident, Lit, LitBool, Meta, MetaList, MetaNameValue, NestedMeta, Type};
+
+use crate::field::msg_fns::MsgFns;
+use crate::options::Options;
 
 #[derive(Clone)]
 pub enum Field {
@@ -24,49 +28,79 @@ pub enum Field {
     Oneof(oneof::Field),
     /// A group field.
     Group(group::Field),
+    /// An ignored field.
+    Ignore,
 }
 
 impl Field {
-    /// Creates a new `Field` from an iterator of field attributes.
+    /// Creates a new list of `Field`s from an iterator of field attributes.
     ///
     /// If the meta items are invalid, an error will be returned.
-    /// If the field should be ignored, `None` is returned.
-    pub fn new(attrs: Vec<Attribute>, inferred_tag: Option<u32>) -> Result<Option<Field>, Error> {
-        let attrs = prost_attrs(attrs);
+    pub fn new(
+        field_ty: Type,
+        attrs: Vec<Attribute>,
+        mut inferred_tag: Option<u32>,
+        options: &Options,
+    ) -> Result<Vec<Field>, Error> {
+        let nested_attrs = prost_nested_attrs(attrs);
+        let mut fields = Vec::with_capacity(nested_attrs.len());
+        let mut ignore = false;
 
-        // TODO: check for ignore attribute.
+        for attrs in nested_attrs {
+            let attrs = attrs?;
 
-        let field = if let Some(field) = scalar::Field::new(&attrs, inferred_tag)? {
-            Field::Scalar(field)
-        } else if let Some(field) = message::Field::new(&attrs, inferred_tag)? {
-            Field::Message(field)
-        } else if let Some(field) = map::Field::new(&attrs, inferred_tag)? {
-            Field::Map(field)
-        } else if let Some(field) = oneof::Field::new(&attrs)? {
-            Field::Oneof(field)
-        } else if let Some(field) = group::Field::new(&attrs, inferred_tag)? {
-            Field::Group(field)
-        } else {
-            bail!("no type attribute");
-        };
+            ensure!(
+                !ignore,
+                "ignore attribute used but other attributes were found: {:?}",
+                attrs
+            );
+            if attrs.iter().any(|attr| word_attr("ignore", attr)) {
+                fields.push(Field::Ignore);
+                ignore = true;
 
-        Ok(Some(field))
+                continue;
+            }
+
+            let field = if let Some(field) =
+                scalar::Field::new(&field_ty, &attrs, inferred_tag, options)?
+            {
+                Field::Scalar(field)
+            } else if let Some(field) =
+                message::Field::new(&field_ty, &attrs, inferred_tag, options)?
+            {
+                Field::Message(field)
+            } else if let Some(field) = map::Field::new(&field_ty, &attrs, inferred_tag, options)? {
+                Field::Map(field)
+            } else if let Some(field) = oneof::Field::new(&attrs)? {
+                Field::Oneof(field)
+            } else if let Some(field) = group::Field::new(&attrs, inferred_tag)? {
+                Field::Group(field)
+            } else {
+                bail!("no type attribute");
+            };
+
+            inferred_tag = field.tags().iter().max().map(|t| t + 1).or(inferred_tag);
+
+            fields.push(field);
+        }
+
+        Ok(fields)
     }
 
     /// Creates a new oneof `Field` from an iterator of field attributes.
     ///
     /// If the meta items are invalid, an error will be returned.
     /// If the field should be ignored, `None` is returned.
-    pub fn new_oneof(attrs: Vec<Attribute>) -> Result<Option<Field>, Error> {
+    pub fn new_oneof(attrs: Vec<Attribute>, options: &Options) -> Result<Option<Field>, Error> {
         let attrs = prost_attrs(attrs);
 
         // TODO: check for ignore attribute.
 
-        let field = if let Some(field) = scalar::Field::new_oneof(&attrs)? {
+        let field = if let Some(field) = scalar::Field::new_oneof(&attrs, options)? {
             Field::Scalar(field)
-        } else if let Some(field) = message::Field::new_oneof(&attrs)? {
+        } else if let Some(field) = message::Field::new_oneof(&attrs, options)? {
             Field::Message(field)
-        } else if let Some(field) = map::Field::new_oneof(&attrs)? {
+        } else if let Some(field) = map::Field::new_oneof(&attrs, options)? {
             Field::Map(field)
         } else if let Some(field) = group::Field::new_oneof(&attrs)? {
             Field::Group(field)
@@ -84,6 +118,7 @@ impl Field {
             Field::Map(ref map) => vec![map.tag],
             Field::Oneof(ref oneof) => oneof.tags.clone(),
             Field::Group(ref group) => vec![group.tag],
+            Field::Ignore => vec![],
         }
     }
 
@@ -95,6 +130,7 @@ impl Field {
             Field::Map(ref map) => map.encode(ident),
             Field::Oneof(ref oneof) => oneof.encode(ident),
             Field::Group(ref group) => group.encode(ident),
+            Field::Ignore => quote!(),
         }
     }
 
@@ -107,6 +143,7 @@ impl Field {
             Field::Map(ref map) => map.merge(ident),
             Field::Oneof(ref oneof) => oneof.merge(ident),
             Field::Group(ref group) => group.merge(ident),
+            Field::Ignore => quote!(),
         }
     }
 
@@ -118,6 +155,7 @@ impl Field {
             Field::Message(ref msg) => msg.encoded_len(ident),
             Field::Oneof(ref oneof) => oneof.encoded_len(ident),
             Field::Group(ref group) => group.encoded_len(ident),
+            Field::Ignore => quote!(0),
         }
     }
 
@@ -129,6 +167,7 @@ impl Field {
             Field::Map(ref map) => map.clear(ident),
             Field::Oneof(ref oneof) => oneof.clear(ident),
             Field::Group(ref group) => group.clear(ident),
+            Field::Ignore => quote!(),
         }
     }
 
@@ -160,6 +199,7 @@ impl Field {
                     }
                 }
             }
+            Field::Message(ref message) => message.debug(ident),
             _ => quote!(&#ident),
         }
     }
@@ -224,7 +264,7 @@ impl fmt::Display for Label {
 }
 
 /// Get the items belonging to the 'prost' list attribute, e.g. `#[prost(foo, bar="baz")]`.
-fn prost_attrs(attrs: Vec<Attribute>) -> Vec<Meta> {
+pub fn prost_attrs(attrs: Vec<Attribute>) -> Vec<Meta> {
     attrs
         .iter()
         .flat_map(Attribute::parse_meta)
@@ -243,6 +283,37 @@ fn prost_attrs(attrs: Vec<Attribute>) -> Vec<Meta> {
                 NestedMeta::Meta(attr) => Ok(attr),
                 NestedMeta::Lit(lit) => bail!("invalid prost attribute: {:?}", lit),
             }
+        })
+        .collect()
+}
+
+/// Get the items belonging to each of the 'prost' list attributes, e.g.
+/// ```
+/// #[prost(foo, bar="baz")]
+/// #[prost(bar, foo="baz")]
+/// ```
+fn prost_nested_attrs(attrs: Vec<Attribute>) -> Vec<Result<Vec<Meta>, Error>> {
+    attrs
+        .iter()
+        .filter_map(|attr| match Attribute::parse_meta(attr) {
+            Ok(meta) => match meta {
+                Meta::List(MetaList { path, nested, .. }) if path.is_ident("prost") => {
+                    let mut attrs = Vec::with_capacity(nested.len());
+                    nested
+                        .into_iter()
+                        .try_for_each(|attr| match attr {
+                            NestedMeta::Meta(attr) => {
+                                attrs.push(attr);
+                                Ok(())
+                            }
+                            NestedMeta::Lit(lit) => bail!("invalid prost attribute: {:?}", lit),
+                        })
+                        .map(|_| attrs)
+                        .into()
+                }
+                _ => None,
+            },
+            Err(err) => Some(Err(err.into())),
         })
         .collect()
 }
@@ -269,7 +340,7 @@ pub fn set_bool(b: &mut bool, message: &str) -> Result<(), Error> {
 
 /// Unpacks an attribute into a (key, boolean) pair, returning the boolean value.
 /// If the key doesn't match the attribute, `None` is returned.
-fn bool_attr(key: &str, attr: &Meta) -> Result<Option<bool>, Error> {
+pub fn bool_attr(key: &str, attr: &Meta) -> Result<Option<bool>, Error> {
     if !attr.path().is_ident(key) {
         return Ok(None);
     }
@@ -301,7 +372,7 @@ fn bool_attr(key: &str, attr: &Meta) -> Result<Option<bool>, Error> {
 }
 
 /// Checks if an attribute matches a word.
-fn word_attr(key: &str, attr: &Meta) -> bool {
+pub fn word_attr(key: &str, attr: &Meta) -> bool {
     if let Meta::Path(ref path) = *attr {
         path.is_ident(key)
     } else {

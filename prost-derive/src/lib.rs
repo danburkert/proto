@@ -16,12 +16,14 @@ use syn::{
 };
 
 mod field;
+mod options;
 use crate::field::Field;
+use crate::options::Options;
 
 fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     let input: DeriveInput = syn::parse(input)?;
-
     let ident = input.ident;
+    let options = Options::new(input.attrs)?;
 
     let variant_data = match input.data {
         Data::Struct(variant_data) => variant_data,
@@ -58,15 +60,23 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
             let field_ident = field
                 .ident
                 .unwrap_or_else(|| Ident::new(&idx.to_string(), Span::call_site()));
-            match Field::new(field.attrs, Some(next_tag)) {
-                Ok(Some(field)) => {
-                    next_tag = field.tags().iter().max().map(|t| t + 1).unwrap_or(next_tag);
-                    Some(Ok((field_ident, field)))
+            match Field::new(field.ty, field.attrs, Some(next_tag), &options) {
+                Ok(fields) if !fields.is_empty() => {
+                    next_tag = fields
+                        .iter()
+                        .flat_map(Field::tags)
+                        .max()
+                        .map(|t| t + 1)
+                        .unwrap_or(next_tag);
+                    fields
+                        .into_iter()
+                        .map(|field| Ok((field_ident.clone(), field)))
+                        .collect()
                 }
-                Ok(None) => None,
-                Err(err) => Some(Err(
+                Ok(_) => Vec::new(),
+                Err(err) => vec![Err(
                     err.context(format!("invalid message field {}.{}", ident, field_ident))
-                )),
+                )],
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -78,7 +88,7 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     // TODO: This encodes oneof fields in the position of their lowest tag,
     // regardless of the currently occupied variant, is that consequential?
     // See: https://developers.google.com/protocol-buffers/docs/encoding#order
-    fields.sort_by_key(|&(_, ref field)| field.tags().into_iter().min().unwrap());
+    fields.sort_by_key(|&(_, ref field)| field.tags().into_iter().min().unwrap_or(0));
     let fields = fields;
 
     let mut tags = fields
@@ -100,22 +110,6 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         .iter()
         .map(|&(ref field_ident, ref field)| field.encode(quote!(self.#field_ident)));
 
-    let merge = fields.iter().map(|&(ref field_ident, ref field)| {
-        let merge = field.merge(quote!(value));
-        let tags = field.tags().into_iter().map(|tag| quote!(#tag));
-        let tags = Itertools::intersperse(tags, quote!(|));
-
-        quote! {
-            #(#tags)* => {
-                let mut value = &mut self.#field_ident;
-                #merge.map_err(|mut error| {
-                    error.push(STRUCT_NAME, stringify!(#field_ident));
-                    error
-                })
-            },
-        }
-    });
-
     let struct_name = if fields.is_empty() {
         quote!()
     } else {
@@ -127,14 +121,103 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     // TODO
     let is_struct = true;
 
+    let merge = if options.merge {
+        let merge = fields.iter().filter_map(|&(ref field_ident, ref field)| {
+            let tags = field.tags();
+            if tags.is_empty() {
+                return None;
+            }
+
+            let merge = field.merge(quote!(value));
+            let tags = tags.into_iter().map(|tag| quote!(#tag));
+            let tags = Itertools::intersperse(tags, quote!(|));
+            Some(quote! {
+                #(#tags)* => {
+                    let mut value = &mut self.#field_ident;
+                    #merge.map_err(|mut error| {
+                        error.push(STRUCT_NAME, stringify!(#field_ident));
+                        error
+                    })
+                },
+            })
+        });
+
+        quote! {
+            #[allow(unused_variables)]
+            fn merge_field<B>(
+                &mut self,
+                tag: u32,
+                wire_type: ::prost::encoding::WireType,
+                buf: &mut B,
+                ctx: ::prost::encoding::DecodeContext,
+            ) -> ::core::result::Result<(), ::prost::DecodeError>
+            where B: ::prost::bytes::Buf {
+                #struct_name
+                match tag {
+                    #(#merge)*
+                    _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+                }
+            }
+        }
+    } else {
+        quote! {
+            fn merge_field<B>(
+                &mut self,
+                _tag: u32,
+                _wire_type: ::prost::encoding::WireType,
+                _buf: &mut B,
+                _ctx: ::prost::encoding::DecodeContext,
+            ) -> ::core::result::Result<(), ::prost::DecodeError>
+            where B: ::prost::bytes::Buf {
+                ::core::result::Result::Err(::prost::DecodeError::new(
+                    concat!(stringify!(#ident), " does not support merging ('merge = false')"),
+                ))
+            }
+
+            fn merge<B>(&mut self, _buf: B) -> ::core::result::Result<(), ::prost::DecodeError>
+            where
+                B: ::prost::bytes::Buf,
+                Self: Sized,
+            {
+                ::core::result::Result::Err(::prost::DecodeError::new(
+                    concat!(stringify!(#ident), " does not support merging ('no_merge' set)"),
+                ))
+            }
+        }
+    };
+
     let clear = fields
         .iter()
         .map(|&(ref field_ident, ref field)| field.clear(quote!(self.#field_ident)));
 
-    let default = fields.iter().map(|&(ref field_ident, ref field)| {
-        let value = field.default();
-        quote!(#field_ident: #value,)
-    });
+    let default = if options.default {
+        let default = fields
+            .iter()
+            .dedup_by_with_count(|(field_ident1, _), (field_ident2, _)| {
+                field_ident1 == field_ident2
+            })
+            .map(|(count, &(ref field_ident, ref field))| {
+                let value = if count == 1 {
+                    field.default()
+                } else {
+                    quote!(::core::default::Default::default())
+                };
+
+                quote!(#field_ident: #value,)
+            });
+
+        quote! {
+            impl #impl_generics Default for #ident #ty_generics #where_clause {
+                fn default() -> Self {
+                    #ident {
+                        #(#default)*
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     let methods = fields
         .iter()
@@ -151,24 +234,38 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         }
     };
 
-    let debugs = unsorted_fields.iter().map(|&(ref field_ident, ref field)| {
-        let wrapper = field.debug(quote!(self.#field_ident));
-        let call = if is_struct {
-            quote!(builder.field(stringify!(#field_ident), &wrapper))
+    let debug = if options.debug {
+        let debugs = unsorted_fields.iter().map(|&(ref field_ident, ref field)| {
+            let wrapper = field.debug(quote!(self.#field_ident));
+            let call = if is_struct {
+                quote!(builder.field(stringify!(#field_ident), &wrapper))
+            } else {
+                quote!(builder.field(&wrapper))
+            };
+            quote! {
+                let builder = {
+                    let wrapper = #wrapper;
+                    #call
+                };
+            }
+        });
+        let debug_builder = if is_struct {
+            quote!(f.debug_struct(stringify!(#ident)))
         } else {
-            quote!(builder.field(&wrapper))
+            quote!(f.debug_tuple(stringify!(#ident)))
         };
+
         quote! {
-             let builder = {
-                 let wrapper = #wrapper;
-                 #call
-             };
+            impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #where_clause {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                    let mut builder = #debug_builder;
+                    #(#debugs;)*
+                    builder.finish()
+                }
+            }
         }
-    });
-    let debug_builder = if is_struct {
-        quote!(f.debug_struct(stringify!(#ident)))
     } else {
-        quote!(f.debug_tuple(stringify!(#ident)))
+        quote!()
     };
 
     let expanded = quote! {
@@ -178,21 +275,7 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
                 #(#encode)*
             }
 
-            #[allow(unused_variables)]
-            fn merge_field<B>(
-                &mut self,
-                tag: u32,
-                wire_type: ::prost::encoding::WireType,
-                buf: &mut B,
-                ctx: ::prost::encoding::DecodeContext,
-            ) -> ::core::result::Result<(), ::prost::DecodeError>
-            where B: ::prost::bytes::Buf {
-                #struct_name
-                match tag {
-                    #(#merge)*
-                    _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
-                }
-            }
+            #merge
 
             #[inline]
             fn encoded_len(&self) -> usize {
@@ -204,23 +287,11 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
             }
         }
 
-        impl #impl_generics Default for #ident #ty_generics #where_clause {
-            fn default() -> Self {
-                #ident {
-                    #(#default)*
-                }
-            }
-        }
-
-        impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #where_clause {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-                let mut builder = #debug_builder;
-                #(#debugs;)*
-                builder.finish()
-            }
-        }
+        #default
 
         #methods
+
+        #debug
     };
 
     Ok(expanded.into())
@@ -234,6 +305,7 @@ pub fn message(input: TokenStream) -> TokenStream {
 fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
     let input: DeriveInput = syn::parse(input)?;
     let ident = input.ident;
+    let options = Options::new(input.attrs)?;
 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -270,7 +342,18 @@ fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
         panic!("Enumeration must have at least one variant");
     }
 
-    let default = variants[0].0.clone();
+    let default = if options.default {
+        let default = variants[0].0.clone();
+        quote! {
+            impl #impl_generics ::core::default::Default for #ident #ty_generics #where_clause {
+                fn default() -> #ident {
+                    #ident::#default
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     let is_valid = variants
         .iter()
@@ -304,11 +387,7 @@ fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
             }
         }
 
-        impl #impl_generics ::core::default::Default for #ident #ty_generics #where_clause {
-            fn default() -> #ident {
-                #ident::#default
-            }
-        }
+        #default
 
         impl #impl_generics ::core::convert::From::<#ident> for i32 #ty_generics #where_clause {
             fn from(value: #ident) -> i32 {
@@ -327,8 +406,8 @@ pub fn enumeration(input: TokenStream) -> TokenStream {
 
 fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
     let input: DeriveInput = syn::parse(input)?;
-
     let ident = input.ident;
+    let options = Options::new(input.attrs)?;
 
     let variants = match input.data {
         Data::Enum(DataEnum { variants, .. }) => variants,
@@ -358,7 +437,8 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
         if variant_fields.len() != 1 {
             bail!("Oneof enum variants must have a single field");
         }
-        match Field::new_oneof(attrs)? {
+
+        match Field::new_oneof(attrs, &options)? {
             Some(field) => fields.push((variant_ident, field)),
             None => bail!("invalid oneof variant: oneof variants may not be ignored"),
         }
@@ -388,48 +468,27 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
         quote!(#ident::#variant_ident(ref value) => { #encode })
     });
 
-    let merge = fields.iter().map(|&(ref variant_ident, ref field)| {
-        let tag = field.tags()[0];
-        let merge = field.merge(quote!(value));
+    let merge = if options.merge {
+        let merge = fields.iter().map(|&(ref variant_ident, ref field)| {
+            let tag = field.tags()[0];
+            let merge = field.merge(quote!(value));
+            quote! {
+                #tag => {
+                    match field {
+                        ::core::option::Option::Some(#ident::#variant_ident(ref mut value)) => {
+                            #merge
+                        },
+                        _ => {
+                            let mut owned_value = ::core::default::Default::default();
+                            let value = &mut owned_value;
+                            #merge.map(|_| *field = ::core::option::Option::Some(#ident::#variant_ident(owned_value)))
+                        },
+                    }
+                }
+            }
+        });
+
         quote! {
-            #tag => {
-                match field {
-                    ::core::option::Option::Some(#ident::#variant_ident(ref mut value)) => {
-                        #merge
-                    },
-                    _ => {
-                        let mut owned_value = ::core::default::Default::default();
-                        let value = &mut owned_value;
-                        #merge.map(|_| *field = ::core::option::Option::Some(#ident::#variant_ident(owned_value)))
-                    },
-                }
-            }
-        }
-    });
-
-    let encoded_len = fields.iter().map(|&(ref variant_ident, ref field)| {
-        let encoded_len = field.encoded_len(quote!(*value));
-        quote!(#ident::#variant_ident(ref value) => #encoded_len)
-    });
-
-    let debug = fields.iter().map(|&(ref variant_ident, ref field)| {
-        let wrapper = field.debug(quote!(*value));
-        quote!(#ident::#variant_ident(ref value) => {
-            let wrapper = #wrapper;
-            f.debug_tuple(stringify!(#variant_ident))
-                .field(&wrapper)
-                .finish()
-        })
-    });
-
-    let expanded = quote! {
-        impl #impl_generics #ident #ty_generics #where_clause {
-            pub fn encode<B>(&self, buf: &mut B) where B: ::prost::bytes::BufMut {
-                match *self {
-                    #(#encode,)*
-                }
-            }
-
             pub fn merge<B>(
                 field: &mut ::core::option::Option<#ident #ty_generics>,
                 tag: u32,
@@ -443,6 +502,62 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
                     _ => unreachable!(concat!("invalid ", stringify!(#ident), " tag: {}"), tag),
                 }
             }
+        }
+    } else {
+        quote! {
+            pub fn merge<B>(
+                _field: &mut ::core::option::Option<#ident #ty_generics>,
+                _tag: u32,
+                _wire_type: ::prost::encoding::WireType,
+                _buf: &mut B,
+                _ctx: ::prost::encoding::DecodeContext,
+            ) -> ::core::result::Result<(), ::prost::DecodeError>
+            where B: ::prost::bytes::Buf {
+                ::core::result::Result::Err(::prost::DecodeError::new(
+                    concat!(stringify!(#ident), " does not support merging ('merge = false')"),
+                ))
+            }
+        }
+    };
+
+    let encoded_len = fields.iter().map(|&(ref variant_ident, ref field)| {
+        let encoded_len = field.encoded_len(quote!(*value));
+        quote!(#ident::#variant_ident(ref value) => #encoded_len)
+    });
+
+    let debug = if options.debug {
+        let debug = fields.iter().map(|&(ref variant_ident, ref field)| {
+            let wrapper = field.debug(quote!(*value));
+            quote!(#ident::#variant_ident(ref value) => {
+                let wrapper = #wrapper;
+                f.debug_tuple(stringify!(#variant_ident))
+                    .field(&wrapper)
+                    .finish()
+            })
+        });
+
+        quote! {
+            impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #where_clause {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                    match *self {
+                        #(#debug,)*
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let expanded = quote! {
+        impl #impl_generics #ident #ty_generics #where_clause {
+            pub fn encode<B>(&self, buf: &mut B) where B: ::prost::bytes::BufMut {
+                match *self {
+                    #(#encode,)*
+                }
+            }
+
+            #merge
 
             #[inline]
             pub fn encoded_len(&self) -> usize {
@@ -452,13 +567,7 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
             }
         }
 
-        impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #where_clause {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-                match *self {
-                    #(#debug,)*
-                }
-            }
-        }
+        #debug
     };
 
     Ok(expanded.into())

@@ -1,9 +1,10 @@
-use anyhow::{bail, Error};
+use anyhow::{bail, ensure, Error};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Ident, Lit, Meta, MetaNameValue, NestedMeta};
+use syn::{Ident, Lit, Meta, MetaNameValue, NestedMeta, Type};
 
-use crate::field::{scalar, set_option, tag_attr};
+use crate::field::{scalar, set_option, tag_attr, MsgFns};
+use crate::options::Options;
 
 #[derive(Clone, Debug)]
 pub enum MapTy {
@@ -26,40 +27,46 @@ impl MapTy {
             MapTy::BTreeMap => Ident::new("btree_map", Span::call_site()),
         }
     }
-
-    fn lib(&self) -> TokenStream {
-        match self {
-            MapTy::HashMap => quote! { std },
-            MapTy::BTreeMap => quote! { prost::alloc },
-        }
-    }
 }
 
 fn fake_scalar(ty: scalar::Ty) -> scalar::Field {
     let kind = scalar::Kind::Plain(scalar::DefaultValue::new(&ty));
     scalar::Field {
+        field_ty: Type::Verbatim(ty.rust_type()),
         ty,
         kind,
         tag: 0, // Not used here
+        clear: true,
+        msg_fns: MsgFns::default(),
     }
 }
 
 #[derive(Clone)]
 pub struct Field {
+    pub field_ty: Type,
     pub map_ty: MapTy,
     pub key_ty: scalar::Ty,
     pub value_ty: ValueTy,
     pub tag: u32,
+    pub msg_fns: MsgFns,
 }
 
 impl Field {
-    pub fn new(attrs: &[Meta], inferred_tag: Option<u32>) -> Result<Option<Field>, Error> {
+    pub fn new(
+        field_ty: &Type,
+        attrs: &[Meta],
+        inferred_tag: Option<u32>,
+        options: &Options,
+    ) -> Result<Option<Field>, Error> {
         let mut types = None;
         let mut tag = None;
+        let mut msg_fns = MsgFns::new();
 
         for attr in attrs {
             if let Some(t) = tag_attr(attr)? {
                 set_option(&mut tag, t, "duplicate tag attributes")?;
+            } else if msg_fns.attr(attr)?.is_some() {
+                continue;
             } else if let Some(map_ty) = attr
                 .path()
                 .get_ident()
@@ -112,19 +119,41 @@ impl Field {
             }
         }
 
+        msg_fns.check(false, options)?;
+
         Ok(match (types, tag.or(inferred_tag)) {
-            (Some((map_ty, key_ty, value_ty)), Some(tag)) => Some(Field {
-                map_ty,
-                key_ty,
-                value_ty,
-                tag,
-            }),
+            (Some((map_ty, key_ty, value_ty)), Some(tag)) => {
+                if let ValueTy::Scalar(scalar::Ty::Enumeration(..)) = value_ty {
+                    ensure!(
+                        msg_fns.is_empty(),
+                        "map fields with enumerations as values cannot have as_msg, to_msg, from_msg, merge_msg, as_msgs or to_msgs attributes",
+                    );
+                }
+
+                Some(Field {
+                    field_ty: field_ty.clone(),
+                    map_ty,
+                    key_ty,
+                    value_ty,
+                    tag,
+                    msg_fns,
+                })
+            }
             _ => None,
         })
     }
 
-    pub fn new_oneof(attrs: &[Meta]) -> Result<Option<Field>, Error> {
-        Field::new(attrs, None)
+    pub fn new_oneof(attrs: &[Meta], options: &Options) -> Result<Option<Field>, Error> {
+        if let Some(field) = Field::new(&Type::Verbatim(quote!()), attrs, None, options)? {
+            ensure!(
+                field.msg_fns.is_empty(),
+                "oneof messages cannot use as_msg, to_msg, from_msg, merge_msg, as_msgs or to_msgs",
+            );
+
+            Ok(Some(field))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns a statement which encodes the map field.
@@ -134,10 +163,11 @@ impl Field {
         let ke = quote!(::prost::encoding::#key_mod::encode);
         let kl = quote!(::prost::encoding::#key_mod::encoded_len);
         let module = self.map_ty.module();
-        match &self.value_ty {
+
+        let encoding_mod = match &self.value_ty {
             ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
                 let default = quote!(#ty::default() as i32);
-                quote! {
+                return quote! {
                     ::prost::encoding::#module::encode_with_default(
                         #ke,
                         #kl,
@@ -148,35 +178,40 @@ impl Field {
                         &#ident,
                         buf,
                     );
-                }
+                };
             }
             ValueTy::Scalar(value_ty) => {
                 let val_mod = value_ty.module();
-                let ve = quote!(::prost::encoding::#val_mod::encode);
-                let vl = quote!(::prost::encoding::#val_mod::encoded_len);
-                quote! {
-                    ::prost::encoding::#module::encode(
-                        #ke,
-                        #kl,
-                        #ve,
-                        #vl,
-                        #tag,
-                        &#ident,
-                        buf,
-                    );
-                }
+                quote!(::prost::encoding::#val_mod)
             }
-            ValueTy::Message => quote! {
+            ValueTy::Message => quote!(::prost::encoding::message),
+        };
+
+        if self.msg_fns.is_empty() {
+            quote! {
                 ::prost::encoding::#module::encode(
                     #ke,
                     #kl,
-                    ::prost::encoding::message::encode,
-                    ::prost::encoding::message::encoded_len,
+                    #encoding_mod::encode,
+                    #encoding_mod::encoded_len,
                     #tag,
                     &#ident,
                     buf,
                 );
-            },
+            }
+        } else {
+            let get = self.msg_fns.get(&quote!(value));
+            quote! {
+                ::prost::encoding::#module::encode(
+                    #ke,
+                    #kl,
+                    |tag, value, buf| #encoding_mod::encode(tag, #get, buf),
+                    |tag, value| #encoding_mod::encoded_len(tag, #get),
+                    #tag,
+                    &#ident,
+                    buf,
+                );
+            }
         }
     }
 
@@ -186,10 +221,11 @@ impl Field {
         let key_mod = self.key_ty.module();
         let km = quote!(::prost::encoding::#key_mod::merge);
         let module = self.map_ty.module();
-        match &self.value_ty {
+
+        let encoding_mod = match &self.value_ty {
             ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
                 let default = quote!(#ty::default() as i32);
-                quote! {
+                return quote! {
                     ::prost::encoding::#module::merge_with_default(
                         #km,
                         ::prost::encoding::int32::merge,
@@ -198,22 +234,39 @@ impl Field {
                         buf,
                         ctx,
                     )
-                }
+                };
             }
             ValueTy::Scalar(value_ty) => {
                 let val_mod = value_ty.module();
-                let vm = quote!(::prost::encoding::#val_mod::merge);
-                quote!(::prost::encoding::#module::merge(#km, #vm, &mut #ident, buf, ctx))
+                quote!(::prost::encoding::#val_mod)
             }
-            ValueTy::Message => quote! {
+            ValueTy::Message => quote!(::prost::encoding::message),
+        };
+
+        let set = self.msg_fns.set(&quote!(value), quote!(msg));
+        if let Some(set) = set {
+            quote! {
                 ::prost::encoding::#module::merge(
                     #km,
-                    ::prost::encoding::message::merge,
+                    |wire_type, value, buf, ctx| {
+                        let mut msg = Default::default();
+                        #encoding_mod::merge(wire_type, &mut msg, buf, ctx).map(|_| #set)
+                    },
                     &mut #ident,
                     buf,
                     ctx,
                 )
-            },
+            }
+        } else {
+            quote! {
+                ::prost::encoding::#module::merge(
+                    #km,
+                    #encoding_mod::merge,
+                    &mut #ident,
+                    buf,
+                    ctx,
+                )
+            }
         }
     }
 
@@ -223,10 +276,10 @@ impl Field {
         let key_mod = self.key_ty.module();
         let kl = quote!(::prost::encoding::#key_mod::encoded_len);
         let module = self.map_ty.module();
-        match &self.value_ty {
+        let encoding_mod = match &self.value_ty {
             ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
                 let default = quote!(#ty::default() as i32);
-                quote! {
+                return quote! {
                     ::prost::encoding::#module::encoded_len_with_default(
                         #kl,
                         ::prost::encoding::int32::encoded_len,
@@ -234,21 +287,34 @@ impl Field {
                         #tag,
                         &#ident,
                     )
-                }
+                };
             }
             ValueTy::Scalar(value_ty) => {
                 let val_mod = value_ty.module();
-                let vl = quote!(::prost::encoding::#val_mod::encoded_len);
-                quote!(::prost::encoding::#module::encoded_len(#kl, #vl, #tag, &#ident))
+                quote!(::prost::encoding::#val_mod)
             }
-            ValueTy::Message => quote! {
+            ValueTy::Message => quote!(::prost::encoding::message),
+        };
+
+        if self.msg_fns.is_empty() {
+            quote! {
                 ::prost::encoding::#module::encoded_len(
                     #kl,
-                    ::prost::encoding::message::encoded_len,
+                    #encoding_mod::encoded_len,
                     #tag,
                     &#ident,
                 )
-            },
+            }
+        } else {
+            let get = self.msg_fns.get(&quote!(value));
+            quote! {
+                ::prost::encoding::#module::encoded_len(
+                    #kl,
+                    |tag, value| #encoding_mod::encoded_len(tag, #get),
+                    #tag,
+                    &#ident,
+                )
+            }
         }
     }
 
@@ -296,46 +362,50 @@ impl Field {
     /// The Debug tries to convert any enumerations met into the variants if possible, instead of
     /// outputting the raw numbers.
     pub fn debug(&self, wrapper_name: TokenStream) -> TokenStream {
-        let type_name = match self.map_ty {
-            MapTy::HashMap => Ident::new("HashMap", Span::call_site()),
-            MapTy::BTreeMap => Ident::new("BTreeMap", Span::call_site()),
-        };
-
         // A fake field for generating the debug wrapper
         let key_wrapper = fake_scalar(self.key_ty.clone()).debug(quote!(KeyWrapper));
-        let key = self.key_ty.rust_type();
-        let value_wrapper = self.value_ty.debug();
-        let libname = self.map_ty.lib();
-        let fmt = quote! {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-                #key_wrapper
-                #value_wrapper
-                let mut builder = f.debug_map();
-                for (k, v) in self.0 {
-                    builder.entry(&KeyWrapper(k), &ValueWrapper(v));
-                }
-                builder.finish()
-            }
-        };
+        let field_ty = &self.field_ty;
+
         match &self.value_ty {
             ValueTy::Scalar(ty) => {
-                let value = ty.rust_type();
+                let value_wrapper = fake_scalar(ty.clone()).debug(quote!(ValueWrapper));
+                let get = if self.msg_fns.as_to_msg() {
+                    self.msg_fns.get(&quote!(v))
+                } else {
+                    quote!(v)
+                };
+
                 quote! {
-                    struct #wrapper_name<'a>(&'a ::#libname::collections::#type_name<#key, #value>);
+                    struct #wrapper_name<'a>(&'a #field_ty);
                     impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
-                        #fmt
+                        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                            #key_wrapper
+                            #value_wrapper
+                            let mut builder = f.debug_map();
+                            for (k, v) in self.0 {
+                                builder.entry(&KeyWrapper(k), &ValueWrapper(#get));
+                            }
+                            builder.finish()
+                        }
                     }
                 }
             }
-            ValueTy::Message => quote! {
-                struct #wrapper_name<'a, V: 'a>(&'a ::#libname::collections::#type_name<#key, V>);
-                impl<'a, V> ::core::fmt::Debug for #wrapper_name<'a, V>
-                where
-                    V: ::core::fmt::Debug + 'a,
-                {
-                    #fmt
+            ValueTy::Message => {
+                let get = self.msg_fns.get(&quote!(v));
+                quote! {
+                    struct #wrapper_name<'a>(&'a #field_ty);
+                    impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
+                        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                            #key_wrapper
+                            let mut builder = f.debug_map();
+                            for (k, v) in self.0 {
+                                builder.entry(&KeyWrapper(k), #get);
+                            }
+                            builder.finish()
+                        }
+                    }
                 }
-            },
+            }
         }
     }
 }
@@ -374,21 +444,6 @@ impl ValueTy {
             Ok(ValueTy::Message)
         } else {
             bail!("invalid map value type: {}", s);
-        }
-    }
-
-    /// Returns a newtype wrapper around the ValueTy for nicer debug.
-    ///
-    /// If the contained value is enumeration, it tries to convert it to the variant. If not, it
-    /// just forwards the implementation.
-    fn debug(&self) -> TokenStream {
-        match self {
-            ValueTy::Scalar(ty) => fake_scalar(ty.clone()).debug(quote!(ValueWrapper)),
-            ValueTy::Message => quote!(
-                fn ValueWrapper<T>(v: T) -> T {
-                    v
-                }
-            ),
         }
     }
 }

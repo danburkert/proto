@@ -1,28 +1,41 @@
 use std::convert::TryFrom;
 use std::fmt;
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail, ensure, Error};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
-use syn::{parse_str, Ident, Lit, LitByteStr, Meta, MetaList, MetaNameValue, NestedMeta, Path};
+use syn::{
+    parse_str, Ident, Lit, LitByteStr, Meta, MetaList, MetaNameValue, NestedMeta, Path, Type,
+};
 
-use crate::field::{bool_attr, set_option, tag_attr, Label};
+use crate::field::{bool_attr, set_option, tag_attr, Label, MsgFns};
+use crate::options::Options;
 
 /// A scalar protobuf field.
 #[derive(Clone)]
 pub struct Field {
+    pub field_ty: Type,
     pub ty: Ty,
     pub kind: Kind,
     pub tag: u32,
+    pub clear: bool,
+    pub msg_fns: MsgFns,
 }
 
 impl Field {
-    pub fn new(attrs: &[Meta], inferred_tag: Option<u32>) -> Result<Option<Field>, Error> {
+    pub fn new(
+        field_ty: &Type,
+        attrs: &[Meta],
+        inferred_tag: Option<u32>,
+        options: &Options,
+    ) -> Result<Option<Field>, Error> {
         let mut ty = None;
         let mut label = None;
         let mut packed = None;
         let mut default = None;
         let mut tag = None;
+        let mut clear = None;
+        let mut msg_fns = MsgFns::new();
 
         let mut unknown_attrs = Vec::new();
 
@@ -37,6 +50,10 @@ impl Field {
                 set_option(&mut label, l, "duplicate label attributes")?;
             } else if let Some(d) = DefaultValue::from_attr(attr)? {
                 set_option(&mut default, d, "duplicate default attributes")?;
+            } else if let Some(c) = bool_attr("clear", attr)? {
+                set_option(&mut clear, c, "duplicate clear attributes")?;
+            } else if msg_fns.attr(attr)?.is_some() {
+                continue;
             } else {
                 unknown_attrs.push(attr);
             }
@@ -86,11 +103,28 @@ impl Field {
             (Some(Label::Repeated), _, false) => Kind::Repeated,
         };
 
-        Ok(Some(Field { ty, kind, tag }))
+        match kind {
+            Kind::Repeated | Kind::Packed => msg_fns.check(true, options)?,
+            _ => msg_fns.check(false, options)?,
+        }
+
+        Ok(Some(Field {
+            field_ty: field_ty.clone(),
+            ty,
+            kind,
+            tag,
+            clear: clear.unwrap_or(true),
+            msg_fns,
+        }))
     }
 
-    pub fn new_oneof(attrs: &[Meta]) -> Result<Option<Field>, Error> {
-        if let Some(mut field) = Field::new(attrs, None)? {
+    pub fn new_oneof(attrs: &[Meta], options: &Options) -> Result<Option<Field>, Error> {
+        if let Some(mut field) = Field::new(&Type::Verbatim(quote!()), attrs, None, options)? {
+            ensure!(
+                field.msg_fns.is_empty(),
+                "oneof messages cannot use as_msg, to_msg, from_msg, merge_msg, as_msgs or to_msgs",
+            );
+
             match field.kind {
                 Kind::Plain(default) => {
                     field.kind = Kind::Required(default);
@@ -107,31 +141,47 @@ impl Field {
 
     pub fn encode(&self, ident: TokenStream) -> TokenStream {
         let module = self.ty.module();
-        let encode_fn = match self.kind {
-            Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(encode),
-            Kind::Repeated => quote!(encode_repeated),
-            Kind::Packed => quote!(encode_packed),
-        };
-        let encode_fn = quote!(::prost::encoding::#module::#encode_fn);
+        let encoding_mod = quote!(::prost::encoding::#module);
         let tag = self.tag;
 
         match self.kind {
             Kind::Plain(ref default) => {
                 let default = default.typed();
+                self.msg_fns.map(
+                    &ident,
+                    quote! {
+                        if *value != #default {
+                            #encoding_mod::encode(#tag, value, buf);
+                        }
+                    },
+                )
+            }
+            Kind::Optional(..) => self.msg_fns.map_as_ref(
+                &ident,
                 quote! {
-                    if #ident != #default {
-                        #encode_fn(#tag, &#ident, buf);
+                    if let ::core::option::Option::Some(value) = value {
+                        #encoding_mod::encode(#tag, value, buf);
                     }
+                },
+            ),
+            Kind::Required(..) => self.msg_fns.map(
+                &ident,
+                quote! {
+                    #encoding_mod::encode(#tag, value, buf);
+                },
+            ),
+            Kind::Repeated => self.msg_fns.for_each(
+                &ident,
+                quote! {
+                    #encoding_mod::encode(#tag, value, buf);
+                },
+            ),
+            Kind::Packed => {
+                let get_slice = self.msg_fns.get_slice(&ident);
+                quote! {
+                    #encoding_mod::encode_packed(#tag, #get_slice, buf);
                 }
             }
-            Kind::Optional(..) => quote! {
-                if let ::core::option::Option::Some(ref value) = #ident {
-                    #encode_fn(#tag, value, buf);
-                }
-            },
-            Kind::Required(..) | Kind::Repeated | Kind::Packed => quote! {
-                #encode_fn(#tag, &#ident, buf);
-            },
         }
     }
 
@@ -139,76 +189,173 @@ impl Field {
     /// scalar value into the field.
     pub fn merge(&self, ident: TokenStream) -> TokenStream {
         let module = self.ty.module();
-        let merge_fn = match self.kind {
-            Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(merge),
-            Kind::Repeated | Kind::Packed => quote!(merge_repeated),
-        };
-        let merge_fn = quote!(::prost::encoding::#module::#merge_fn);
+        let encoding_mod = quote!(::prost::encoding::#module);
 
         match self.kind {
-            Kind::Plain(..) | Kind::Required(..) | Kind::Repeated | Kind::Packed => quote! {
-                #merge_fn(wire_type, #ident, buf, ctx)
-            },
-            Kind::Optional(..) => quote! {
-                #merge_fn(wire_type,
-                          #ident.get_or_insert_with(Default::default),
-                          buf,
-                          ctx)
-            },
+            Kind::Plain(..) | Kind::Required(..) => {
+                let set = self.msg_fns.set(&ident, quote!(msg));
+                if let Some(set) = set {
+                    quote! {{
+                        let mut msg = Default::default();
+                        #encoding_mod::merge(wire_type, &mut msg, buf, ctx)
+                            .map(|_| #set)
+                    }}
+                } else {
+                    quote! {
+                        #encoding_mod::merge(wire_type, #ident, buf, ctx)
+                    }
+                }
+            }
+            Kind::Optional(..) => {
+                let set = self.msg_fns.set(&ident, quote!(Some(msg)));
+                if let Some(set) = set {
+                    quote! {{
+                        let mut msg = Default::default();
+                        #encoding_mod::merge(wire_type, &mut msg, buf, ctx)
+                            .map(|_| #set)
+                    }}
+                } else {
+                    quote! {
+                        #encoding_mod::merge(
+                            wire_type,
+                            #ident.get_or_insert_with(Default::default),
+                            buf,
+                            ctx,
+                        )
+                    }
+                }
+            }
+            Kind::Repeated | Kind::Packed => {
+                let push = self.msg_fns.push(&ident, quote!(msg));
+                if let Some(push) = push {
+                    quote! {{
+                        let mut msg = Default::default();
+                        #encoding_mod::merge(wire_type, &mut msg, buf, ctx)
+                            .map(|_| #push)
+                    }}
+                } else {
+                    quote! {
+                        #encoding_mod::merge_repeated(wire_type, #ident, buf, ctx)
+                    }
+                }
+            }
         }
     }
 
     /// Returns an expression which evaluates to the encoded length of the field.
     pub fn encoded_len(&self, ident: TokenStream) -> TokenStream {
         let module = self.ty.module();
-        let encoded_len_fn = match self.kind {
-            Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(encoded_len),
-            Kind::Repeated => quote!(encoded_len_repeated),
-            Kind::Packed => quote!(encoded_len_packed),
-        };
-        let encoded_len_fn = quote!(::prost::encoding::#module::#encoded_len_fn);
+        let encoding_mod = quote!(::prost::encoding::#module);
         let tag = self.tag;
 
         match self.kind {
             Kind::Plain(ref default) => {
                 let default = default.typed();
+                self.msg_fns.map(
+                    &ident,
+                    quote! {
+                        if *value != #default {
+                            #encoding_mod::encoded_len(#tag, value)
+                        } else {
+                            0
+                        }
+                    },
+                )
+            }
+            Kind::Optional(..) => self.msg_fns.map_as_ref(
+                &ident,
                 quote! {
-                    if #ident != #default {
-                        #encoded_len_fn(#tag, &#ident)
-                    } else {
-                        0
-                    }
+                    value.map_or(0, |value| #encoding_mod::encoded_len(#tag, value))
+                },
+            ),
+            Kind::Required(..) => self.msg_fns.map(
+                &ident,
+                quote! {
+                    #encoding_mod::encoded_len(#tag, value)
+                },
+            ),
+            Kind::Repeated => {
+                let iter_map = self.msg_fns.iter_map(
+                    &ident,
+                    quote! {
+                        #encoding_mod::encoded_len(#tag, value)
+                    },
+                );
+
+                quote! {
+                    #iter_map.sum::<usize>()
                 }
             }
-            Kind::Optional(..) => quote! {
-                #ident.as_ref().map_or(0, |value| #encoded_len_fn(#tag, value))
-            },
-            Kind::Required(..) | Kind::Repeated | Kind::Packed => quote! {
-                #encoded_len_fn(#tag, &#ident)
-            },
+            Kind::Packed => {
+                let get_slice = self.msg_fns.get_slice(&ident);
+                quote! {
+                    #encoding_mod::encoded_len_packed(#tag, #get_slice)
+                }
+            }
         }
     }
 
     pub fn clear(&self, ident: TokenStream) -> TokenStream {
+        if !self.clear {
+            return quote!();
+        }
+
+        let ty = &self.ty;
         match self.kind {
-            Kind::Plain(ref default) | Kind::Required(ref default) => {
-                let default = default.typed();
-                match self.ty {
-                    Ty::String | Ty::Bytes(..) => quote!(#ident.clear()),
-                    _ => quote!(#ident = #default),
-                }
-            }
-            Kind::Optional(_) => quote!(#ident = ::core::option::Option::None),
-            Kind::Repeated | Kind::Packed => quote!(#ident.clear()),
+            Kind::Plain(ref default) | Kind::Required(ref default) => self
+                .msg_fns
+                .set(&quote!(&mut #ident), default.owned())
+                .unwrap_or_else(|| {
+                    let default = default.typed();
+                    match ty {
+                        Ty::String | Ty::Bytes(..) => quote!(#ident.clear()),
+                        _ => quote!(#ident = #default),
+                    }
+                }),
+            Kind::Optional(..) => self
+                .msg_fns
+                .set(
+                    &quote!(&mut #ident),
+                    quote! {
+                        ::core::option::Option::None
+                    },
+                )
+                .unwrap_or_else(|| {
+                    quote! {
+                        #ident = ::core::option::Option::None
+                    }
+                }),
+            Kind::Repeated | Kind::Packed if self.msg_fns.as_to_msgs() => self
+                .msg_fns
+                .set(
+                    &quote!(&mut ident),
+                    quote! {
+                        Default::default()
+                    },
+                )
+                .unwrap_or_else(|| {
+                    quote! {
+                        #ident = Default::default()
+                    }
+                }),
+            Kind::Repeated | Kind::Packed => quote! {
+                #ident.clear()
+            },
         }
     }
 
-    /// Returns an expression which evaluates to the default value of the field.
     pub fn default(&self) -> TokenStream {
         match self.kind {
-            Kind::Plain(ref value) | Kind::Required(ref value) => value.owned(),
-            Kind::Optional(_) => quote!(::core::option::Option::None),
-            Kind::Repeated | Kind::Packed => quote!(::prost::alloc::vec::Vec::new()),
+            Kind::Plain(ref default) | Kind::Required(ref default) => {
+                self.msg_fns.from(default.owned())
+            }
+            Kind::Optional(..) => self.msg_fns.from(quote!(::core::option::Option::None)),
+            Kind::Repeated | Kind::Packed if self.msg_fns.as_to_msgs() => quote! {
+                Default::default()
+            },
+            Kind::Repeated | Kind::Packed => quote! {
+                ::prost::alloc::vec::Vec::new()
+            },
         }
     }
 
@@ -237,9 +384,24 @@ impl Field {
     pub fn debug(&self, wrapper_name: TokenStream) -> TokenStream {
         let wrapper = self.debug_inner(quote!(Inner));
         let inner_ty = self.ty.rust_type();
+        let field_ty = &self.field_ty;
+
         match self.kind {
-            Kind::Plain(_) | Kind::Required(_) => self.debug_inner(wrapper_name),
-            Kind::Optional(_) => quote! {
+            Kind::Plain(..) | Kind::Required(..) | Kind::Optional(..)
+                if self.msg_fns.as_to_msg() =>
+            {
+                let get = self.msg_fns.get(&quote!(self.0));
+                quote! {
+                    struct #wrapper_name<'a>(&'a #field_ty);
+                    impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
+                        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                            ::core::fmt::Debug::fmt(#get, f)
+                        }
+                    }
+                }
+            }
+            Kind::Plain(..) | Kind::Required(..) => self.debug_inner(wrapper_name),
+            Kind::Optional(..) => quote! {
                 struct #wrapper_name<'a>(&'a ::core::option::Option<#inner_ty>);
                 impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
@@ -249,15 +411,21 @@ impl Field {
                 }
             },
             Kind::Repeated | Kind::Packed => {
+                let for_each = self.msg_fns.for_each(
+                    &quote!(self.0),
+                    quote! {
+                        vec_builder.entry(&Inner(value));
+                    },
+                );
+
                 quote! {
-                    struct #wrapper_name<'a>(&'a ::prost::alloc::vec::Vec<#inner_ty>);
+                    struct #wrapper_name<'a>(&'a #field_ty);
                     impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
                         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                            #wrapper
+
                             let mut vec_builder = f.debug_list();
-                            for v in self.0 {
-                                #wrapper
-                                vec_builder.entry(&Inner(v));
-                            }
+                            #for_each
                             vec_builder.finish()
                         }
                     }
@@ -268,6 +436,10 @@ impl Field {
 
     /// Returns methods to embed in the message.
     pub fn methods(&self, ident: &Ident) -> Option<TokenStream> {
+        if !self.msg_fns.is_empty() {
+            return None;
+        }
+
         let mut ident_str = ident.to_string();
         if ident_str.starts_with("r#") {
             ident_str = ident_str[2..].to_owned();
