@@ -58,6 +58,16 @@ impl<T> PathMap<T> {
     }
 }
 
+impl<T> PathMap<Vec<T>> {
+    /// Inserts a new associated value to the current matchers values.
+    pub(crate) fn extend(&mut self, matcher: String, value: T) {
+        self.matchers
+            .entry(matcher)
+            .or_insert_with(|| vec![])
+            .push(value);
+    }
+}
+
 /// Given a fully-qualified path, returns a sequence of fully-qualified paths which match a prefix
 /// of the input path, in decreasing path-length order.
 ///

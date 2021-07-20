@@ -224,8 +224,8 @@ pub struct Config {
     service_generator: Option<Box<dyn ServiceGenerator>>,
     map_type: PathMap<MapType>,
     bytes_type: PathMap<BytesType>,
-    type_attributes: PathMap<String>,
-    field_attributes: PathMap<String>,
+    type_attributes: PathMap<Vec<String>>,
+    field_attributes: PathMap<Vec<String>>,
     prost_types: bool,
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
@@ -391,7 +391,7 @@ impl Config {
         A: AsRef<str>,
     {
         self.field_attributes
-            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+            .extend(path.as_ref().to_string(), attribute.as_ref().to_string());
         self
     }
 
@@ -440,7 +440,7 @@ impl Config {
         A: AsRef<str>,
     {
         self.type_attributes
-            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+            .extend(path.as_ref().to_string(), attribute.as_ref().to_string());
         self
     }
 

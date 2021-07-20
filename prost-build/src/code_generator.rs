@@ -253,9 +253,11 @@ impl<'a> CodeGenerator<'a> {
         assert_eq!(b'.', fq_message_name.as_bytes()[0]);
         // TODO: this clone is dirty, but expedious.
         if let Some(attributes) = self.config.type_attributes.get(fq_message_name).cloned() {
-            self.push_indent();
-            self.buf.push_str(&attributes);
-            self.buf.push('\n');
+            for attribute in attributes {
+                self.push_indent();
+                self.buf.push_str(&attribute);
+                self.buf.push('\n');
+            }
         }
     }
 
@@ -268,9 +270,11 @@ impl<'a> CodeGenerator<'a> {
             .get_field(fq_message_name, field_name)
             .cloned()
         {
-            self.push_indent();
-            self.buf.push_str(&attributes);
-            self.buf.push('\n');
+            for attribute in attributes {
+                self.push_indent();
+                self.buf.push_str(&attribute);
+                self.buf.push('\n');
+            }
         }
     }
 
