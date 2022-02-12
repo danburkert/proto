@@ -51,10 +51,10 @@ where
     }
 
     let byte = bytes[0];
-    if byte < 0x80 {
+    if (byte & 0x80) == 0 {
         buf.advance(1);
         Ok(u64::from(byte))
-    } else if len > 10 || bytes[len - 1] < 0x80 {
+    } else if len > 10 || ((bytes[len - 1] & 0x80) == 0) {
         let (value, advance) = decode_varint_slice(bytes)?;
         buf.advance(advance);
         Ok(value)
@@ -84,73 +84,55 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     assert!(!bytes.is_empty());
     assert!(bytes.len() > 10 || bytes[bytes.len() - 1] < 0x80);
 
-    let mut b: u8;
-    let mut part0: u32;
-    b = unsafe { *bytes.get_unchecked(0) };
-    part0 = u32::from(b);
-    if b < 0x80 {
-        return Ok((u64::from(part0), 1));
-    };
-    part0 -= 0x80;
-    b = unsafe { *bytes.get_unchecked(1) };
-    part0 += u32::from(b) << 7;
-    if b < 0x80 {
-        return Ok((u64::from(part0), 2));
-    };
-    part0 -= 0x80 << 7;
-    b = unsafe { *bytes.get_unchecked(2) };
-    part0 += u32::from(b) << 14;
-    if b < 0x80 {
-        return Ok((u64::from(part0), 3));
-    };
-    part0 -= 0x80 << 14;
-    b = unsafe { *bytes.get_unchecked(3) };
-    part0 += u32::from(b) << 21;
-    if b < 0x80 {
-        return Ok((u64::from(part0), 4));
-    };
-    part0 -= 0x80 << 21;
-    let value = u64::from(part0);
+    let mut part0: u32 = 0;
+    let mut part1: u32 = 0;
 
-    let mut part1: u32;
-    b = unsafe { *bytes.get_unchecked(4) };
-    part1 = u32::from(b);
-    if b < 0x80 {
-        return Ok((value + (u64::from(part1) << 28), 5));
-    };
-    part1 -= 0x80;
-    b = unsafe { *bytes.get_unchecked(5) };
-    part1 += u32::from(b) << 7;
-    if b < 0x80 {
-        return Ok((value + (u64::from(part1) << 28), 6));
-    };
-    part1 -= 0x80 << 7;
-    b = unsafe { *bytes.get_unchecked(6) };
-    part1 += u32::from(b) << 14;
-    if b < 0x80 {
-        return Ok((value + (u64::from(part1) << 28), 7));
-    };
-    part1 -= 0x80 << 14;
-    b = unsafe { *bytes.get_unchecked(7) };
-    part1 += u32::from(b) << 21;
-    if b < 0x80 {
-        return Ok((value + (u64::from(part1) << 28), 8));
-    };
-    part1 -= 0x80 << 21;
-    let value = value + ((u64::from(part1)) << 28);
+    macro_rules! part0_byte {
+        ($byte_no:literal) => {
+            let b = unsafe { *bytes.get_unchecked($byte_no) };
+            if (b & 0x80) == 0 {
+                part0 |= u32::from(b) << (7 * $byte_no);
+                return Ok((u64::from(part0), $byte_no + 1));
+            };
+            part0 |= u32::from(b & 0x7F) << (7 * $byte_no);
+        };
+    }
+
+    part0_byte!(0);
+    part0_byte!(1);
+    part0_byte!(2);
+    part0_byte!(3);
+
+    macro_rules! part1_byte {
+        ($byte_no:literal) => {
+            let b = unsafe { *bytes.get_unchecked($byte_no + 4) };
+            if (b & 0x80) == 0 {
+                part1 |= u32::from(b) << (7 * $byte_no);
+                return Ok((u64::from(part0) | (u64::from(part1) << 28), $byte_no + 5));
+            };
+            part1 |= u32::from(b & 0x7F) << (7 * $byte_no);
+        };
+    }
+
+    part1_byte!(0);
+    part1_byte!(1);
+    part1_byte!(2);
+    part1_byte!(3);
+
+    let value = u64::from(part0) | ((u64::from(part1)) << 28);
 
     let mut part2: u32;
-    b = unsafe { *bytes.get_unchecked(8) };
+    let b = unsafe { *bytes.get_unchecked(8) };
     part2 = u32::from(b);
-    if b < 0x80 {
+    if (b & 0x80) == 0 {
         return Ok((value + (u64::from(part2) << 56), 9));
     };
-    part2 -= 0x80;
-    b = unsafe { *bytes.get_unchecked(9) };
-    part2 += u32::from(b) << 7;
+    part2 &= !0x80;
+    let b = unsafe { *bytes.get_unchecked(9) };
+    part2 |= u32::from(b) << 7;
     // Check for u64::MAX overflow. See [`ConsumeVarint`][1] for details.
     // [1]: https://github.com/protocolbuffers/protobuf-go/blob/v1.27.1/encoding/protowire/wire.go#L358
-    if b < 0x02 {
+    if b == 0x1 {
         return Ok((value + (u64::from(part2) << 56), 10));
     };
 
@@ -1612,9 +1594,6 @@ mod test {
     #[test]
     fn varint() {
         fn check(value: u64, mut encoded: &[u8]) {
-            // TODO(rust-lang/rust-clippy#5494)
-            #![allow(clippy::clone_double_ref)]
-
             // Small buffer.
             let mut buf = Vec::with_capacity(1);
             encode_varint(value, &mut buf);
@@ -1627,8 +1606,10 @@ mod test {
 
             assert_eq!(encoded_len_varint(value), encoded.len());
 
-            let roundtrip_value = decode_varint(&mut encoded.clone()).expect("decoding failed");
+            let (roundtrip_value, advance) =
+                decode_varint_slice(&mut encoded.clone()).expect("decoding failed");
             assert_eq!(value, roundtrip_value);
+            assert_eq!(encoded.len(), advance);
 
             let roundtrip_value = decode_varint_slow(&mut encoded).expect("slow decoding failed");
             assert_eq!(value, roundtrip_value);
