@@ -228,6 +228,7 @@ pub struct Config {
     field_attributes: PathMap<String>,
     prost_types: bool,
     strip_enum_prefix: bool,
+    preserve_original_names: bool,
     out_dir: Option<PathBuf>,
     extern_paths: Vec<(String, String)>,
     default_package_filename: String,
@@ -668,6 +669,15 @@ impl Config {
         self
     }
 
+    /// Configures the code generator to not change resulting `enum` and `struct` original names defined in *.proto files.
+    /// ## Example
+    /// With feature enabled Protobuf `message DNSRecord {}` will be Rust `struct DNSRecord {}` not `struct DnsRecord {}`.
+    /// The same logic for enums.
+    pub fn preserve_original_names(&mut self, value: bool) -> &mut Self {
+        self.preserve_original_names = value;
+        self
+    }
+
     /// Configures the output directory where generated Rust files will be written.
     ///
     /// If unset, defaults to the `OUT_DIR` environment variable. `OUT_DIR` is set by Cargo when
@@ -1000,6 +1010,7 @@ impl default::Default for Config {
             field_attributes: PathMap::default(),
             prost_types: true,
             strip_enum_prefix: true,
+            preserve_original_names: false,
             out_dir: None,
             extern_paths: Vec::new(),
             default_package_filename: "_".to_string(),
@@ -1022,6 +1033,7 @@ impl fmt::Debug for Config {
             .field("field_attributes", &self.field_attributes)
             .field("prost_types", &self.prost_types)
             .field("strip_enum_prefix", &self.strip_enum_prefix)
+            .field("preserve_original_names", &self.preserve_original_names)
             .field("out_dir", &self.out_dir)
             .field("extern_paths", &self.extern_paths)
             .field("default_package_filename", &self.default_package_filename)

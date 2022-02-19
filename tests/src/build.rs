@@ -104,6 +104,15 @@ fn main() {
             .unwrap();
     }
 
+    {
+        let mut config = prost_build::Config::new();
+        config.preserve_original_names(true);
+
+        config
+            .compile_protos(&[src.join("preserve_original_names.proto")], includes)
+            .unwrap();
+    }
+
     config
         .bytes(&["."])
         .compile_protos(&[src.join("well_known_types.proto")], includes)

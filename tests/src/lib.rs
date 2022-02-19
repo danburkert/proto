@@ -44,6 +44,8 @@ mod message_encoding;
 mod no_unused_results;
 #[cfg(test)]
 mod well_known_types;
+#[cfg(test)]
+mod preserve_original_names;
 
 pub mod foo {
     pub mod bar_baz {
