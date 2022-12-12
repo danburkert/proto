@@ -14,6 +14,8 @@ use crate::EncodeError;
 
 /// A Protocol Buffers message.
 pub trait Message: Debug + Send + Sync {
+    const RECURSION_LIMIT: u32;
+
     /// Encodes the message to a buffer.
     ///
     /// This method will panic if the buffer has insufficient capacity.
@@ -135,7 +137,7 @@ pub trait Message: Debug + Send + Sync {
         B: Buf,
         Self: Sized,
     {
-        let ctx = DecodeContext::default();
+        let ctx = DecodeContext { recurse_count: Self::RECURSION_LIMIT };
         while buf.has_remaining() {
             let (tag, wire_type) = decode_key(&mut buf)?;
             self.merge_field(tag, wire_type, &mut buf, ctx.clone())?;
@@ -154,7 +156,7 @@ pub trait Message: Debug + Send + Sync {
             WireType::LengthDelimited,
             self,
             &mut buf,
-            DecodeContext::default(),
+            DecodeContext { recurse_count: Self::RECURSION_LIMIT },
         )
     }
 
@@ -166,6 +168,7 @@ impl<M> Message for Box<M>
 where
     M: Message,
 {
+    const RECURSION_LIMIT: u32 = M::RECURSION_LIMIT;
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,

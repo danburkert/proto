@@ -181,7 +181,6 @@ impl<'a> CodeGenerator<'a> {
             });
 
         self.append_doc(&fq_message_name, None);
-        self.append_type_attributes(&fq_message_name);
         self.push_indent();
         self.buf
             .push_str("#[allow(clippy::derive_partial_eq_without_eq)]\n");
@@ -189,6 +188,7 @@ impl<'a> CodeGenerator<'a> {
             "#[derive(Clone, PartialEq, {}::Message)]\n",
             self.config.prost_path.as_deref().unwrap_or("::prost")
         ));
+        self.append_type_attributes(&fq_message_name);
         self.push_indent();
         self.buf.push_str("pub struct ");
         self.buf.push_str(&to_upper_camel(&message_name));

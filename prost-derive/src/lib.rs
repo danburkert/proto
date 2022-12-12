@@ -23,6 +23,16 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
 
     let ident = input.ident;
 
+    let recursion_limit: u32 = if let Some(attr) = input.attrs.iter().find(|attr| attr.path.is_ident("RecursionLimit")) {
+        if let syn::Lit::Int(attr) = attr.parse_args().unwrap() {
+            attr.base10_parse().unwrap()
+        } else {
+            panic!("unexpected RecursionLimit type: {attr:?}")
+        }
+    } else {
+        100
+    };
+
     let variant_data = match input.data {
         Data::Struct(variant_data) => variant_data,
         Data::Enum(..) => bail!("Message can not be derived for an enum"),
@@ -187,6 +197,8 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
 
     let expanded = quote! {
         impl #impl_generics ::prost::Message for #ident #ty_generics #where_clause {
+            const RECURSION_LIMIT: u32 = #recursion_limit;
+
             #[allow(unused_variables)]
             fn encode_raw<B>(&self, buf: &mut B) where B: ::prost::bytes::BufMut {
                 #(#encode)*
@@ -238,7 +250,7 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
     Ok(expanded.into())
 }
 
-#[proc_macro_derive(Message, attributes(prost))]
+#[proc_macro_derive(Message, attributes(prost, RecursionLimit))]
 pub fn message(input: TokenStream) -> TokenStream {
     try_message(input).unwrap()
 }
