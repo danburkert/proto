@@ -45,6 +45,9 @@ mod no_unused_results;
 #[cfg(test)]
 mod well_known_types;
 
+#[cfg(all(test, feature = "heapless"))]
+mod derive_heapless;
+
 pub mod foo {
     pub mod bar_baz {
         include!(concat!(env!("OUT_DIR"), "/foo.bar_baz.rs"));

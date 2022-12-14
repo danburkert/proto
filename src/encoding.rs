@@ -802,6 +802,7 @@ pub mod string {
         encode_varint(value.len() as u64, buf);
         buf.put_slice(value.as_bytes());
     }
+
     pub fn merge<B>(
         wire_type: WireType,
         value: &mut String,
@@ -835,6 +836,64 @@ pub mod string {
 
             let drop_guard = DropGuard(value.as_mut_vec());
             bytes::merge_one_copy(wire_type, drop_guard.0, buf, ctx)?;
+            match str::from_utf8(drop_guard.0) {
+                Ok(_) => {
+                    // Success; do not clear the bytes.
+                    mem::forget(drop_guard);
+                    Ok(())
+                }
+                Err(_) => Err(DecodeError::new(
+                    "invalid string value: data is not UTF-8 encoded",
+                )),
+            }
+        }
+    }
+
+    #[cfg(feature = "heapless")]
+    pub fn encode_heapless<B>(tag: u32, value: impl AsRef<str>, buf: &mut B)
+    where
+        B: BufMut,
+    {
+        let v = value.as_ref();
+        encode_key(tag, WireType::LengthDelimited, buf);
+        encode_varint(v.len() as u64, buf);
+        buf.put_slice(v.as_bytes());
+    }
+
+    #[cfg(feature = "heapless")]
+    pub fn merge_heapless<B, const N: usize>(
+        wire_type: WireType,
+        value: &mut heapless::String<N>,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        B: Buf,
+    {
+        // ## Unsafety
+        //
+        // `string::merge` reuses `bytes::merge`, with an additional check of utf-8
+        // well-formedness. If the utf-8 is not well-formed, or if any other error occurs, then the
+        // string is cleared, so as to avoid leaking a string field with invalid data.
+        //
+        // This implementation uses the unsafe `String::as_mut_vec` method instead of the safe
+        // alternative of temporarily swapping an empty `String` into the field, because it results
+        // in up to 10% better performance on the protobuf message decoding benchmarks.
+        //
+        // It's required when using `String::as_mut_vec` that invalid utf-8 data not be leaked into
+        // the backing `String`. To enforce this, even in the event of a panic in `bytes::merge` or
+        // in the buf implementation, a drop guard is used.
+        unsafe {
+            struct DropGuard<'a, const M: usize>(&'a mut heapless::Vec<u8, M>);
+            impl<'a, const M: usize> Drop for DropGuard<'a, M> {
+                #[inline]
+                fn drop(&mut self) {
+                    self.0.clear();
+                }
+            }
+
+            let drop_guard = DropGuard(value.as_mut_vec());
+            bytes::merge(wire_type, drop_guard.0, buf, ctx)?;
             match str::from_utf8(drop_guard.0) {
                 Ok(_) => {
                     // Success; do not clear the bytes.
@@ -933,6 +992,31 @@ impl sealed::BytesAdapter for Vec<u8> {
         self.clear();
         self.reserve(buf.remaining());
         self.put(buf);
+    }
+
+    fn append_to<B>(&self, buf: &mut B)
+    where
+        B: BufMut,
+    {
+        buf.put(self.as_slice())
+    }
+}
+
+#[cfg(feature = "heapless")]
+impl<const N: usize> BytesAdapter for heapless::Vec<u8, N> {}
+
+#[cfg(feature = "heapless")]
+impl<const N: usize> sealed::BytesAdapter for heapless::Vec<u8, N> {
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    fn replace_with<B>(&mut self, buf: B)
+    where
+        B: Buf,
+    {
+        self.clear();
+        let _ = self.extend_from_slice(buf.chunk());
     }
 
     fn append_to<B>(&self, buf: &mut B)

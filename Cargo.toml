@@ -49,6 +49,7 @@ std = []
 [dependencies]
 bytes = { version = "1", default-features = false }
 prost-derive = { version = "0.11.0", path = "prost-derive", optional = true }
+heapless = { version = "0.7.16", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
