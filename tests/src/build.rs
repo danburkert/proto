@@ -54,9 +54,9 @@ fn main() {
         .compile_protos(&[src.join("ident_conversion.proto")], includes)
         .unwrap();
 
-    let mut c = prost_build::Config::new();
-    c.recursion_limit("E", 200);
-    c.compile_protos(&[src.join("nesting.proto")], includes)
+    config.recursion_limit("nesting.E", 200);
+    config
+        .compile_protos(&[src.join("nesting.proto")], includes)
         .unwrap();
 
     config

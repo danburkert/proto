@@ -31,7 +31,7 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         if let syn::Lit::Int(attr) = attr.parse_args().unwrap() {
             attr.base10_parse().unwrap()
         } else {
-            panic!("unexpected RecursionLimit type: {attr:?}")
+            panic!("unexpected RecursionLimit type: {:?}", attr)
         }
     } else {
         100

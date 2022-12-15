@@ -277,7 +277,7 @@ impl<'a> CodeGenerator<'a> {
         assert_eq!(b'.', fq_message_name.as_bytes()[0]);
         if let Some(limit) = self.config.recursion_limits.get_first(fq_message_name) {
             push_indent(self.buf, self.depth);
-            self.buf.push_str(&format!("#[RecursionLimit({limit})]"));
+            self.buf.push_str(&format!("#[RecursionLimit({})]", limit));
             self.buf.push('\n');
         }
     }
