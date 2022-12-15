@@ -14,7 +14,12 @@ use crate::EncodeError;
 
 /// A Protocol Buffers message.
 pub trait Message: Debug + Send + Sync {
-    const RECURSION_LIMIT: u32;
+    /// The recursion limit for decoding protobuf messages.
+    ///
+    /// Defaults to 100. Can be customized in your build.rs or by using the no-recursion-limit crate feature.
+    fn recursion_limit() -> u32
+    where
+        Self: Sized;
 
     /// Encodes the message to a buffer.
     ///
@@ -137,7 +142,7 @@ pub trait Message: Debug + Send + Sync {
         B: Buf,
         Self: Sized,
     {
-        let ctx = DecodeContext { recurse_count: Self::RECURSION_LIMIT };
+        let ctx = DecodeContext::new(Self::recursion_limit());
         while buf.has_remaining() {
             let (tag, wire_type) = decode_key(&mut buf)?;
             self.merge_field(tag, wire_type, &mut buf, ctx.clone())?;
@@ -156,7 +161,7 @@ pub trait Message: Debug + Send + Sync {
             WireType::LengthDelimited,
             self,
             &mut buf,
-            DecodeContext { recurse_count: Self::RECURSION_LIMIT },
+            DecodeContext::new(Self::recursion_limit()),
         )
     }
 
@@ -168,7 +173,9 @@ impl<M> Message for Box<M>
 where
     M: Message,
 {
-    const RECURSION_LIMIT: u32 = M::RECURSION_LIMIT;
+    fn recursion_limit() -> u32 {
+        M::recursion_limit()
+    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
