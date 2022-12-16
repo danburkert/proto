@@ -65,7 +65,7 @@ impl Field {
                 .get_ident()
                 .and_then(|i| MapTy::from_str(&i.to_string()))
             {
-                let (k, v): (String, String) = match &*attr {
+                let (k, v): (String, String) = match attr {
                     Meta::NameValue(MetaNameValue {
                         lit: Lit::Str(lit), ..
                     }) => {

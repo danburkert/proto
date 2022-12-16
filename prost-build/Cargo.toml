@@ -23,7 +23,7 @@ cleanup-markdown = ["pulldown-cmark", "pulldown-cmark-to-cmark"]
 [dependencies]
 bytes = { version = "1", default-features = false }
 heck = "0.4"
-itertools = "0.10"
+itertools = { version = "0.10", default-features = false, features = ["use_alloc"] }
 log = "0.4"
 multimap = { version = "0.8", default-features = false }
 petgraph = { version = "0.6", default-features = false }

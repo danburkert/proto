@@ -17,7 +17,7 @@ fn main() -> io::Result<()> {
     loop {
         bytes.resize(4, 0);
 
-        if io::stdin().read_exact(&mut *bytes).is_err() {
+        if io::stdin().read_exact(&mut bytes).is_err() {
             // No more test cases.
             return Ok(());
         }
@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
         let len = bytes.as_slice().get_u32_le() as usize;
 
         bytes.resize(len, 0);
-        io::stdin().read_exact(&mut *bytes)?;
+        io::stdin().read_exact(&mut bytes)?;
 
         let result = match ConformanceRequest::decode(&*bytes) {
             Ok(request) => handle_request(request),

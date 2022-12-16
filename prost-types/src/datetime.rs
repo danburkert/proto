@@ -349,7 +349,7 @@ fn parse_digits(s: &str) -> (&str, &str) {
 fn parse_char(s: &str, c: u8) -> Option<&str> {
     debug_assert!(s.is_ascii());
 
-    ensure!(*s.as_bytes().get(0)? == c);
+    ensure!(*s.as_bytes().first()? == c);
     Some(&s[1..])
 }
 
@@ -358,7 +358,7 @@ fn parse_char(s: &str, c: u8) -> Option<&str> {
 fn parse_char_ignore_case(s: &str, c: u8) -> Option<&str> {
     debug_assert!(s.is_ascii());
 
-    ensure!(s.as_bytes().get(0)?.eq_ignore_ascii_case(&c));
+    ensure!(s.as_bytes().first()?.eq_ignore_ascii_case(&c));
     Some(&s[1..])
 }
 

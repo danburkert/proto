@@ -260,7 +260,7 @@ pub fn encoded_len_varint(value: u64) -> usize {
     ((((value | 1).leading_zeros() ^ 63) * 9 + 73) / 64) as usize
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum WireType {
     Varint = 0,
@@ -571,7 +571,7 @@ macro_rules! varint {
     );
 }
 varint!(bool, bool,
-        to_uint64(value) if *value { 1u64 } else { 0u64 },
+        to_uint64(value) u64::from(*value),
         from_uint64(value) value != 0);
 varint!(i32, int32);
 varint!(i64, int64);
@@ -1611,7 +1611,8 @@ mod test {
 
             assert_eq!(encoded_len_varint(value), encoded.len());
 
-            let roundtrip_value = decode_varint(&mut encoded.clone()).expect("decoding failed");
+            let roundtrip_value =
+                decode_varint(&mut <&[u8]>::clone(&encoded)).expect("decoding failed");
             assert_eq!(value, roundtrip_value);
 
             let roundtrip_value = decode_varint_slow(&mut encoded).expect("slow decoding failed");

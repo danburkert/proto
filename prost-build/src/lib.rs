@@ -1101,8 +1101,8 @@ impl Config {
 
     #[cfg(feature = "format")]
     fn fmt_modules(&mut self, modules: &mut HashMap<Module, String>) {
-        for (_, buf) in modules {
-            let file = syn::parse_file(&buf).unwrap();
+        for buf in modules.values_mut() {
+            let file = syn::parse_file(buf).unwrap();
             let formatted = prettyplease::unparse(&file);
             *buf = formatted;
         }
@@ -1544,6 +1544,6 @@ mod tests {
         let mut f = File::open(filepath).unwrap();
         let mut content = String::new();
         f.read_to_string(&mut content).unwrap();
-        return content;
+        content
     }
 }

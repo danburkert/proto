@@ -5,6 +5,7 @@ use prost::{Enumeration, Message, Oneof};
 use crate::check_message;
 use crate::check_serialize_equivalent;
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct RepeatedFloats {
     #[prost(float, tag = "11")]
@@ -31,6 +32,7 @@ fn check_scalar_types() {
 }
 
 /// A protobuf message which contains all scalar types.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct ScalarTypes {
     #[prost(int32, tag = "001")]
@@ -231,6 +233,7 @@ fn check_tags_inferred() {
     check_serialize_equivalent(&tags_inferred, &tags_qualified);
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct TagsInferred {
     #[prost(bool)]
@@ -253,6 +256,7 @@ pub struct TagsInferred {
     pub six: Basic,
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct TagsQualified {
     #[prost(tag = "1", bool)]
@@ -276,6 +280,7 @@ pub struct TagsQualified {
 }
 
 /// A prost message with default value.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct DefaultValues {
     #[prost(int32, tag = "1", default = "42")]
@@ -318,7 +323,7 @@ fn check_default_values() {
 }
 
 /// A protobuf enum.
-#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::upper_case_acronyms, clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, Copy, Debug, PartialEq, Enumeration)]
 pub enum BasicEnumeration {
     ZERO = 0,
@@ -327,6 +332,7 @@ pub enum BasicEnumeration {
     THREE = 3,
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct Basic {
     #[prost(int32, tag = "1")]
@@ -366,6 +372,7 @@ pub struct Basic {
     pub bytes_map: ::std::collections::HashMap<String, Vec<u8>>,
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Message)]
 pub struct Compound {
     #[prost(message, optional, tag = "1")]
@@ -385,6 +392,7 @@ pub struct Compound {
     pub message_btree_map: prost::alloc::collections::BTreeMap<i32, Basic>,
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Oneof)]
 pub enum BasicOneof {
     #[prost(int32, tag = "8")]
