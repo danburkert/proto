@@ -1,6 +1,6 @@
 [package]
 name = "prost-derive"
-version = "0.11.2"
+version = "0.11.5"
 authors = [
     "Dan Burkert <dan@danburkert.com>",
     "Lucio Franco <luciofranco14@gmail.com>",

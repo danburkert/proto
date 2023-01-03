@@ -29,7 +29,7 @@ enum Syntax {
 pub struct CodeGenerator<'a> {
     config: &'a mut Config,
     package: String,
-    source_info: SourceCodeInfo,
+    source_info: Option<SourceCodeInfo>,
     syntax: Syntax,
     message_graph: &'a MessageGraph,
     extern_paths: &'a ExternPaths,
@@ -51,16 +51,14 @@ impl<'a> CodeGenerator<'a> {
         file: FileDescriptorProto,
         buf: &mut String,
     ) {
-        let mut source_info = file
-            .source_code_info
-            .expect("no source code info in request");
-        source_info.location.retain(|location| {
-            let len = location.path.len();
-            len > 0 && len % 2 == 0
+        let source_info = file.source_code_info.map(|mut s| {
+            s.location.retain(|loc| {
+                let len = loc.path.len();
+                len > 0 && len % 2 == 0
+            });
+            s.location.sort_by(|a, b| a.path.cmp(&b.path));
+            s
         });
-        source_info
-            .location
-            .sort_by_key(|location| location.path.clone());
 
         let syntax = match file.syntax.as_ref().map(String::as_str) {
             None | Some("proto2") => Syntax::Proto2,
@@ -182,6 +180,7 @@ impl<'a> CodeGenerator<'a> {
 
         self.append_doc(&fq_message_name, None);
         self.append_type_attributes(&fq_message_name);
+        self.append_message_attributes(&fq_message_name);
         self.push_indent();
         self.buf
             .push_str("#[allow(clippy::derive_partial_eq_without_eq)]\n");
@@ -278,6 +277,24 @@ impl<'a> CodeGenerator<'a> {
         if let Some(limit) = self.config.recursion_limits.get_first(fq_message_name) {
             push_indent(self.buf, self.depth);
             self.buf.push_str(&format!("#[RecursionLimit({})]", limit));
+            self.buf.push('\n');
+        }
+    }
+
+    fn append_message_attributes(&mut self, fq_message_name: &str) {
+        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+        for attribute in self.config.message_attributes.get(fq_message_name) {
+            push_indent(self.buf, self.depth);
+            self.buf.push_str(attribute);
+            self.buf.push('\n');
+        }
+    }
+
+    fn append_enum_attributes(&mut self, fq_message_name: &str) {
+        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+        for attribute in self.config.enum_attributes.get(fq_message_name) {
+            push_indent(self.buf, self.depth);
+            self.buf.push_str(attribute);
             self.buf.push('\n');
         }
     }
@@ -516,6 +533,7 @@ impl<'a> CodeGenerator<'a> {
 
         let oneof_name = format!("{}.{}", fq_message_name, oneof.name());
         self.append_type_attributes(&oneof_name);
+        self.append_enum_attributes(&oneof_name);
         self.push_indent();
         self.buf
             .push_str("#[allow(clippy::derive_partial_eq_without_eq)]\n");
@@ -579,14 +597,13 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str("}\n");
     }
 
-    fn location(&self) -> &Location {
-        let idx = self
-            .source_info
+    fn location(&self) -> Option<&Location> {
+        let source_info = self.source_info.as_ref()?;
+        let idx = source_info
             .location
             .binary_search_by_key(&&self.path[..], |location| &location.path[..])
             .unwrap();
-
-        &self.source_info.location[idx]
+        Some(&source_info.location[idx])
     }
 
     fn append_doc(&mut self, fq_name: &str, field_name: Option<&str>) {
@@ -599,7 +616,9 @@ impl<'a> CodeGenerator<'a> {
             self.config.disable_comments.get(fq_name).next().is_none()
         };
         if append_doc {
-            Comments::from_location(self.location()).append_with_indent(self.depth, self.buf)
+            if let Some(comments) = self.location().map(Comments::from_location) {
+                comments.append_with_indent(self.depth, self.buf);
+            }
         }
     }
 
@@ -626,6 +645,7 @@ impl<'a> CodeGenerator<'a> {
 
         self.append_doc(&fq_proto_enum_name, None);
         self.append_type_attributes(&fq_proto_enum_name);
+        self.append_enum_attributes(&fq_proto_enum_name);
         self.push_indent();
         self.buf.push_str(
             &format!("#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, {}::Enumeration)]\n",self.config.prost_path.as_deref().unwrap_or("::prost")),
@@ -725,7 +745,7 @@ impl<'a> CodeGenerator<'a> {
 
         for variant in variant_mappings.iter() {
             self.push_indent();
-            self.buf.push_str("\"");
+            self.buf.push('\"');
             self.buf.push_str(variant.proto_name);
             self.buf.push_str("\" => Some(Self::");
             self.buf.push_str(&variant.generated_variant_name);
@@ -752,7 +772,10 @@ impl<'a> CodeGenerator<'a> {
         let name = service.name().to_owned();
         debug!("  service: {:?}", name);
 
-        let comments = Comments::from_location(self.location());
+        let comments = self
+            .location()
+            .map(Comments::from_location)
+            .unwrap_or_default();
 
         self.path.push(2);
         let methods = service
@@ -761,8 +784,12 @@ impl<'a> CodeGenerator<'a> {
             .enumerate()
             .map(|(idx, mut method)| {
                 debug!("  method: {:?}", method.name());
+
                 self.path.push(idx as i32);
-                let comments = Comments::from_location(self.location());
+                let comments = self
+                    .location()
+                    .map(Comments::from_location)
+                    .unwrap_or_default();
                 self.path.pop();
 
                 let name = method.name.take().unwrap();

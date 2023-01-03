@@ -5,7 +5,7 @@ use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
 use regex::Regex;
 
 /// Comments on a Protobuf item.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Comments {
     /// Leading detached blocks of comments.
     pub leading_detached: Vec<Vec<String>>,
