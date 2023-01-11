@@ -19,7 +19,10 @@ pub trait Message: Debug + Send + Sync {
     /// Defaults to 100. Can be customized in your build.rs or by using the no-recursion-limit crate feature.
     fn recursion_limit() -> u32
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        100
+    }
 
     /// Encodes the message to a buffer.
     ///
