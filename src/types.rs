@@ -20,9 +20,6 @@ use crate::{
 
 /// `google.protobuf.BoolValue`
 impl Message for bool {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -61,9 +58,6 @@ impl Message for bool {
 
 /// `google.protobuf.UInt32Value`
 impl Message for u32 {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -102,9 +96,6 @@ impl Message for u32 {
 
 /// `google.protobuf.UInt64Value`
 impl Message for u64 {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -143,10 +134,6 @@ impl Message for u64 {
 
 /// `google.protobuf.Int32Value`
 impl Message for i32 {
-    fn recursion_limit() -> u32 {
-        0
-    }
-
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -185,9 +172,6 @@ impl Message for i32 {
 
 /// `google.protobuf.Int64Value`
 impl Message for i64 {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -226,9 +210,6 @@ impl Message for i64 {
 
 /// `google.protobuf.FloatValue`
 impl Message for f32 {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -267,9 +248,6 @@ impl Message for f32 {
 
 /// `google.protobuf.DoubleValue`
 impl Message for f64 {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -308,9 +286,6 @@ impl Message for f64 {
 
 /// `google.protobuf.StringValue`
 impl Message for String {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -349,9 +324,6 @@ impl Message for String {
 
 /// `google.protobuf.BytesValue`
 impl Message for Vec<u8> {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -390,9 +362,6 @@ impl Message for Vec<u8> {
 
 /// `google.protobuf.BytesValue`
 impl Message for Bytes {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -431,9 +400,6 @@ impl Message for Bytes {
 
 /// `google.protobuf.Empty`
 impl Message for () {
-    fn recursion_limit() -> u32 {
-        0
-    }
     fn encode_raw<B>(&self, _buf: &mut B)
     where
         B: BufMut,
