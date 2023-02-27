@@ -1,6 +1,6 @@
 [package]
 name = "prost-build"
-version = "0.11.6"
+version = "0.11.8"
 authors = [
     "Dan Burkert <dan@danburkert.com>",
     "Lucio Franco <luciofranco14@gmail.com>",
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/prost-build"
 readme = "README.md"
 description = "A Protocol Buffers implementation for the Rust Language."
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.60"
 
 [features]
 default = ["format"]
@@ -27,8 +27,8 @@ itertools = { version = "0.10", default-features = false, features = ["use_alloc
 log = "0.4"
 multimap = { version = "0.8", default-features = false }
 petgraph = { version = "0.6", default-features = false }
-prost = { version = "0.11.6", path = "..", default-features = false }
-prost-types = { version = "0.11.6", path = "../prost-types", default-features = false }
+prost = { version = "0.11.8", path = "..", default-features = false }
+prost-types = { version = "0.11.8", path = "../prost-types", default-features = false }
 tempfile = "3"
 lazy_static = "1.4.0"
 regex = { version = "1.5.5", default-features = false, features = ["std", "unicode-bool"] }
@@ -43,4 +43,3 @@ pulldown-cmark-to-cmark = { version = "10.0.1", optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.8", default-features = false }
-

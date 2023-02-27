@@ -44,7 +44,7 @@ start-to-finish example.
 
 ### MSRV
 
-`prost` follows the `tokio-rs` projects MSRV model and supports 1.56+. For more
+`prost` follows the `tokio-rs` projects MSRV model and supports 1.60. For more
 information on the tokio msrv policy you can check it out [here][tokio msrv]
 
 [tokio msrv]: https://github.com/tokio-rs/tokio/#supported-rust-versions

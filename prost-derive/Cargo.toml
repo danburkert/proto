@@ -1,6 +1,6 @@
 [package]
 name = "prost-derive"
-version = "0.11.6"
+version = "0.11.8"
 authors = [
     "Dan Burkert <dan@danburkert.com>",
     "Lucio Franco <luciofranco14@gmail.com>",
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/prost-derive"
 readme = "README.md"
 description = "A Protocol Buffers implementation for the Rust Language."
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.60"
 
 [lib]
 proc_macro = true

@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/prost-build/0.11.6")]
+#![doc(html_root_url = "https://docs.rs/prost-build/0.11.8")]
 #![allow(clippy::option_as_ref_deref, clippy::format_push_string)]
 
 //! `prost-build` compiles `.proto` files into Rust.
@@ -814,6 +814,7 @@ impl Config {
     }
 
     /// Configures what filename protobufs with no package definition are written to.
+    /// The filename will be appended with the `.rs` extension.
     pub fn default_package_filename<S>(&mut self, filename: S) -> &mut Self
     where
         S: Into<String>,
@@ -897,6 +898,92 @@ impl Config {
         self
     }
 
+    /// Compile a [`FileDescriptorSet`] into Rust files during a Cargo build with
+    /// additional code generator configuration options.
+    ///
+    /// This method is like `compile_protos` function except it does not invoke `protoc`
+    /// and instead requires the user to supply a [`FileDescriptorSet`].
+    ///
+    /// # Example `build.rs`
+    ///
+    /// ```rust,no_run
+    /// # fn fds() -> FileDescriptorSet { todo!() }
+    /// fn main() -> std::io::Result<()> {
+    ///   let file_descriptor_set = fds();
+    ///
+    ///   prost_build::Config::new()
+    ///     .compile_fds(file_descriptor_set)?;
+    /// }
+    /// ```
+    pub fn compile_fds(&mut self, fds: FileDescriptorSet) -> Result<()> {
+        let mut target_is_env = false;
+        let target: PathBuf = self.out_dir.clone().map(Ok).unwrap_or_else(|| {
+            env::var_os("OUT_DIR")
+                .ok_or_else(|| {
+                    Error::new(ErrorKind::Other, "OUT_DIR environment variable is not set")
+                })
+                .map(|val| {
+                    target_is_env = true;
+                    Into::into(val)
+                })
+        })?;
+
+        let requests = fds
+            .file
+            .into_iter()
+            .map(|descriptor| {
+                (
+                    Module::from_protobuf_package_name(descriptor.package()),
+                    descriptor,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let file_names = requests
+            .iter()
+            .map(|req| {
+                (
+                    req.0.clone(),
+                    req.0.to_file_name_or(&self.default_package_filename),
+                )
+            })
+            .collect::<HashMap<Module, String>>();
+
+        let modules = self.generate(requests)?;
+        for (module, content) in &modules {
+            let file_name = file_names
+                .get(module)
+                .expect("every module should have a filename");
+            let output_path = target.join(file_name);
+
+            let previous_content = fs::read(&output_path);
+
+            if previous_content
+                .map(|previous_content| previous_content == content.as_bytes())
+                .unwrap_or(false)
+            {
+                trace!("unchanged: {:?}", file_name);
+            } else {
+                trace!("writing: {:?}", file_name);
+                fs::write(output_path, content)?;
+            }
+        }
+
+        if let Some(ref include_file) = self.include_file {
+            trace!("Writing include file: {:?}", target.join(include_file));
+            let mut file = fs::File::create(target.join(include_file))?;
+            self.write_includes(
+                modules.keys().collect(),
+                &mut file,
+                0,
+                if target_is_env { None } else { Some(&target) },
+            )?;
+            file.flush()?;
+        }
+
+        Ok(())
+    }
+
     /// Compile `.proto` files into Rust files during a Cargo build with additional code generator
     /// configuration options.
     ///
@@ -922,18 +1009,6 @@ impl Config {
         protos: &[impl AsRef<Path>],
         includes: &[impl AsRef<Path>],
     ) -> Result<()> {
-        let mut target_is_env = false;
-        let target: PathBuf = self.out_dir.clone().map(Ok).unwrap_or_else(|| {
-            env::var_os("OUT_DIR")
-                .ok_or_else(|| {
-                    Error::new(ErrorKind::Other, "OUT_DIR environment variable is not set")
-                })
-                .map(|val| {
-                    target_is_env = true;
-                    Into::into(val)
-                })
-        })?;
-
         // TODO: This should probably emit 'rerun-if-changed=PATH' directives for cargo, however
         // according to [1] if any are output then those paths replace the default crate root,
         // which is undesirable. Figure out how to do it in an additive way; perhaps gcc-rs has
@@ -1021,60 +1096,7 @@ impl Config {
             )
         })?;
 
-        let requests = file_descriptor_set
-            .file
-            .into_iter()
-            .map(|descriptor| {
-                (
-                    Module::from_protobuf_package_name(descriptor.package()),
-                    descriptor,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let file_names = requests
-            .iter()
-            .map(|req| {
-                (
-                    req.0.clone(),
-                    req.0.to_file_name_or(&self.default_package_filename),
-                )
-            })
-            .collect::<HashMap<Module, String>>();
-
-        let modules = self.generate(requests)?;
-        for (module, content) in &modules {
-            let file_name = file_names
-                .get(module)
-                .expect("every module should have a filename");
-            let output_path = target.join(file_name);
-
-            let previous_content = fs::read(&output_path);
-
-            if previous_content
-                .map(|previous_content| previous_content == content.as_bytes())
-                .unwrap_or(false)
-            {
-                trace!("unchanged: {:?}", file_name);
-            } else {
-                trace!("writing: {:?}", file_name);
-                fs::write(output_path, content)?;
-            }
-        }
-
-        if let Some(ref include_file) = self.include_file {
-            trace!("Writing include file: {:?}", target.join(include_file));
-            let mut file = fs::File::create(target.join(include_file))?;
-            self.write_includes(
-                modules.keys().collect(),
-                &mut file,
-                0,
-                if target_is_env { None } else { Some(&target) },
-            )?;
-            file.flush()?;
-        }
-
-        Ok(())
+        self.compile_fds(file_descriptor_set)
     }
 
     fn write_includes(
@@ -1378,6 +1400,31 @@ impl fmt::Display for Module {
 /// [4]: https://developers.google.com/protocol-buffers/docs/proto#packages
 pub fn compile_protos(protos: &[impl AsRef<Path>], includes: &[impl AsRef<Path>]) -> Result<()> {
     Config::new().compile_protos(protos, includes)
+}
+
+/// Compile a [`FileDescriptorSet`] into Rust files during a Cargo build.
+///
+/// The generated `.rs` files are written to the Cargo `OUT_DIR` directory, suitable for use with
+/// the [include!][1] macro. See the [Cargo `build.rs` code generation][2] example for more info.
+///
+/// This function should be called in a project's `build.rs`.
+///
+/// This function can be combined with a crate like [`protox`] which outputs a
+/// [`FileDescriptorSet`] and is a pure Rust implementation of `protoc`.
+///
+/// [`protox`]: https://github.com/andrewhickman/protox
+///
+/// # Example
+/// ```rust,no_run
+/// # fn fds() -> FileDescriptorSet { todo!() }
+/// fn main() -> std::io::Result<()> {
+///   let file_descriptor_set = fds();
+///
+///   prost_build::compile_fds(file_descriptor_set)?;
+/// }
+/// ```
+pub fn compile_fds(fds: FileDescriptorSet) -> Result<()> {
+    Config::new().compile_fds(fds)
 }
 
 /// Returns the path to the `protoc` binary.

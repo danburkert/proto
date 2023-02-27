@@ -9,7 +9,6 @@ publish = false
 edition = "2018"
 
 [dependencies]
-bytes = { version = "1", default-features = false }
 prost = { path = ".." }
 prost-types = { path = "../prost-types" }
 
@@ -39,3 +38,6 @@ bench = false
 [[bench]]
 name = "dataset"
 harness = false
+
+[package.metadata.cargo-machete]
+ignored = ["prost-types"]
