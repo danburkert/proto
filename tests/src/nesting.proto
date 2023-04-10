@@ -23,3 +23,13 @@ message C {
 message D {
     map<string, D> m = 1;
 }
+
+message E {
+    E e = 1;
+    repeated E repeated_e = 2;
+    map<int32, E> map_e = 3;
+
+    B b = 4;
+    repeated B repeated_b = 5;
+    map<int32, B> map_b = 6;
+}

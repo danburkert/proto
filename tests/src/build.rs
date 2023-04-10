@@ -54,6 +54,7 @@ fn main() {
         .compile_protos(&[src.join("ident_conversion.proto")], includes)
         .unwrap();
 
+    config.recursion_limit("nesting.E", 200);
     config
         .compile_protos(&[src.join("nesting.proto")], includes)
         .unwrap();

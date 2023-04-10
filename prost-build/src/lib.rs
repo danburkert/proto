@@ -247,6 +247,7 @@ pub struct Config {
     message_attributes: PathMap<String>,
     enum_attributes: PathMap<String>,
     field_attributes: PathMap<String>,
+    recursion_limits: PathMap<u32>,
     prost_types: bool,
     strip_enum_prefix: bool,
     out_dir: Option<PathBuf>,
@@ -467,6 +468,25 @@ impl Config {
     {
         self.type_attributes
             .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    /// Configure a custom recursion limit for certain messages.
+    ///
+    /// This defaults to 100, and can be disabled with the no-recursion-limit crate feature.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # let mut config = prost_build::Config::new();
+    /// config.recursion_limit("my_messages.MyMessageType", 1000);
+    /// ```
+    pub fn recursion_limit<P>(&mut self, path: P, limit: u32) -> &mut Self
+    where
+        P: AsRef<str>,
+    {
+        self.recursion_limits
+            .insert(path.as_ref().to_string(), limit);
         self
     }
 
@@ -1215,6 +1235,7 @@ impl default::Default for Config {
             message_attributes: PathMap::default(),
             enum_attributes: PathMap::default(),
             field_attributes: PathMap::default(),
+            recursion_limits: PathMap::default(),
             prost_types: true,
             strip_enum_prefix: true,
             out_dir: None,

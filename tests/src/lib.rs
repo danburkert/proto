@@ -406,6 +406,27 @@ mod tests {
     }
 
     #[test]
+    fn test_deep_nesting_with_custom_recursion_limit() {
+        fn build_and_roundtrip(depth: usize) -> Result<(), prost::DecodeError> {
+            use crate::nesting::E;
+
+            let mut e = Box::new(E::default());
+            for _ in 0..depth {
+                let mut next = Box::new(E::default());
+                next.e = Some(e);
+                e = next;
+            }
+
+            let mut buf = Vec::new();
+            e.encode(&mut buf).unwrap();
+            E::decode(&*buf).map(|_| ())
+        }
+
+        assert!(build_and_roundtrip(200).is_ok());
+        assert!(build_and_roundtrip(201).is_err());
+    }
+
+    #[test]
     fn test_deep_nesting_oneof() {
         fn build_and_roundtrip(depth: usize) -> Result<(), prost::DecodeError> {
             use crate::recursive_oneof::{a, A, C};
