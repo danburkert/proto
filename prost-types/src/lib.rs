@@ -421,6 +421,17 @@ impl fmt::Display for Timestamp {
     }
 }
 
+// Implement stable Eq for Duration.
+// Duration only contains Eq fields.
+// Done manually since protobuf.rs is generated.
+impl Eq for Duration {}
+
+// Implement stable Eq for Any.
+// Any only contains Eq fields.
+// Done manually since protobuf.rs is generated.
+#[cfg(feature = "std")]
+impl Eq for Any {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
