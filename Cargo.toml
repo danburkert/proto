@@ -21,6 +21,7 @@ members = [
   "conformance",
   "prost-build",
   "prost-derive",
+  "prost-examples",
   "prost-types",
   "protobuf",
   "tests",

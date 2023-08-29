@@ -1,0 +1,13 @@
+[package]
+name = "prost-examples"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+prost = { version = "*", path = "../" }
+prost-types = { version = "*", path = "../prost-types" }
+
+[build-dependencies]
+prost-build = { version = "*", path = "../prost-build" }

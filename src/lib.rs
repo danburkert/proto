@@ -12,6 +12,7 @@ pub use bytes;
 mod error;
 mod message;
 mod types;
+pub mod unknown;
 
 #[doc(hidden)]
 pub mod encoding;

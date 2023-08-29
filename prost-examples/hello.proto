@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hello;
+
+message OldHelloWorld {
+  uint32 foo = 1;
+  Inner inner = 2;
+}
+
+message Inner {
+  string cool_string = 1;
+}
+
+message NewHelloWorld {
+  uint32 foo = 1;
+  Inner inner = 2;
+  uint32 new_field = 3;
+  oneof bar {
+    Inner inner1 = 4;
+    Inner inner2 = 5;
+  }
+}

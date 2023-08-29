@@ -259,6 +259,7 @@ pub struct Config {
     include_file: Option<PathBuf>,
     prost_path: Option<String>,
     fmt: bool,
+    generate_unknown_fields: bool,
 }
 
 impl Config {
@@ -590,6 +591,13 @@ impl Config {
     /// types, and instead generate Protobuf well-known types from their `.proto` definitions.
     pub fn compile_well_known_types(&mut self) -> &mut Self {
         self.prost_types = false;
+        self
+    }
+
+    /// Configures the code generator to include an `unknown_fields` field in message structs,
+    /// which will include all unknown fields in a deserialized Protobuf.
+    pub fn generate_unknown_fields(&mut self) -> &mut Self {
+        self.generate_unknown_fields = true;
         self
     }
 
@@ -1249,6 +1257,7 @@ impl default::Default for Config {
             include_file: None,
             prost_path: None,
             fmt: true,
+            generate_unknown_fields: false,
         }
     }
 }
