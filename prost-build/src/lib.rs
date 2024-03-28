@@ -233,6 +233,7 @@ pub struct Config {
     service_generator: Option<Box<dyn ServiceGenerator>>,
     map_type: PathMap<MapType>,
     bytes_type: PathMap<BytesType>,
+    original_type_names: PathMap<bool>,
     type_attributes: PathMap<String>,
     message_attributes: PathMap<String>,
     enum_attributes: PathMap<String>,
@@ -461,6 +462,16 @@ impl Config {
     {
         self.type_attributes
             .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    // Don't rename the type at the given path
+    pub fn preserve_type_name<P>(&mut self, path: P) -> &mut Self
+    where
+        P: AsRef<str>,
+    {
+        self.original_type_names
+            .insert(path.as_ref().to_string(), true);
         self
     }
 
@@ -1294,6 +1305,7 @@ impl default::Default for Config {
             service_generator: None,
             map_type: PathMap::default(),
             bytes_type: PathMap::default(),
+            original_type_names: PathMap::default(),
             type_attributes: PathMap::default(),
             message_attributes: PathMap::default(),
             enum_attributes: PathMap::default(),

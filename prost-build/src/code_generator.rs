@@ -188,7 +188,8 @@ impl<'a> CodeGenerator<'a> {
         self.append_skip_debug(&fq_message_name);
         self.push_indent();
         self.buf.push_str("pub struct ");
-        self.buf.push_str(&to_upper_camel(&message_name));
+        let type_name = &self.make_type_name(&message_name, &message_name);
+        self.buf.push_str(&type_name);
         self.buf.push_str(" {\n");
 
         self.depth += 1;
@@ -307,6 +308,19 @@ impl<'a> CodeGenerator<'a> {
 
         self.depth -= 1;
         self.buf.push_str("}\n");
+    }
+
+    fn make_type_name(&self, fq_message_name: &str, name: &str) -> String {
+        if *self
+            .config
+            .original_type_names
+            .get_first(fq_message_name)
+            .unwrap_or(&false)
+        {
+            name.to_string()
+        } else {
+            to_upper_camel(&name)
+        }
     }
 
     fn append_type_attributes(&mut self, fq_message_name: &str) {
@@ -447,7 +461,7 @@ impl<'a> CodeGenerator<'a> {
                 }
                 self.buf.push_str("\\\"");
             } else if type_ == Type::Enum {
-                let mut enum_value = to_upper_camel(default);
+                let mut enum_value = self.make_type_name(&default, &default);
                 if self.config.strip_enum_prefix {
                     // Field types are fully qualified, so we extract
                     // the last segment and strip it from the left
@@ -458,7 +472,8 @@ impl<'a> CodeGenerator<'a> {
                         .and_then(|ty| ty.split('.').last())
                         .unwrap();
 
-                    enum_value = strip_enum_prefix(&to_upper_camel(enum_type), &enum_value)
+                    enum_value =
+                        strip_enum_prefix(&self.make_type_name(enum_type, enum_type), &enum_value)
                 }
                 self.buf.push_str(&enum_value);
             } else {
@@ -552,7 +567,7 @@ impl<'a> CodeGenerator<'a> {
         let name = format!(
             "{}::{}",
             to_snake(message_name),
-            to_upper_camel(oneof.name())
+            self.make_type_name(oneof.name(), oneof.name())
         );
         self.append_doc(fq_message_name, None);
         self.push_indent();
@@ -599,7 +614,8 @@ impl<'a> CodeGenerator<'a> {
         self.append_skip_debug(&fq_message_name);
         self.push_indent();
         self.buf.push_str("pub enum ");
-        self.buf.push_str(&to_upper_camel(oneof.name()));
+        let type_name = &self.make_type_name(oneof.name(), oneof.name());
+        self.buf.push_str(&type_name);
         self.buf.push_str(" {\n");
 
         self.path.push(2);
@@ -640,15 +656,14 @@ impl<'a> CodeGenerator<'a> {
                 boxed
             );
 
+            let type_name = self.make_type_name(field.name(), field.name());
             if boxed {
                 self.buf.push_str(&format!(
                     "{}(::prost::alloc::boxed::Box<{}>),\n",
-                    to_upper_camel(field.name()),
-                    ty
+                    type_name, ty
                 ));
             } else {
-                self.buf
-                    .push_str(&format!("{}({}),\n", to_upper_camel(field.name()), ty));
+                self.buf.push_str(&format!("{}({}),\n", type_name, ty));
             }
         }
         self.depth -= 1;
@@ -687,7 +702,7 @@ impl<'a> CodeGenerator<'a> {
         debug!("  enum: {:?}", desc.name());
 
         let proto_enum_name = desc.name();
-        let enum_name = to_upper_camel(proto_enum_name);
+        let enum_name = self.make_type_name(proto_enum_name, proto_enum_name);
 
         let enum_values = &desc.value;
         let fq_proto_enum_name = self.fq_name(proto_enum_name);
@@ -721,8 +736,12 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str(&enum_name);
         self.buf.push_str(" {\n");
 
-        let variant_mappings =
-            build_enum_value_mappings(&enum_name, self.config.strip_enum_prefix, enum_values);
+        let variant_mappings = build_enum_value_mappings(
+            &enum_name,
+            self.config.strip_enum_prefix,
+            enum_values,
+            |field_name: &str| self.make_type_name(&enum_name, field_name),
+        );
 
         self.depth += 1;
         self.path.push(2);
@@ -881,7 +900,7 @@ impl<'a> CodeGenerator<'a> {
         self.path.pop();
 
         let service = Service {
-            name: to_upper_camel(&name),
+            name: self.make_type_name(&name, &name),
             proto_name: name,
             package: self.package.clone(),
             comments,
@@ -923,7 +942,7 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str("}\n");
     }
 
-    fn resolve_type(&self, field: &FieldDescriptorProto, fq_message_name: &str) -> String {
+    fn resolve_type(&mut self, field: &FieldDescriptorProto, fq_message_name: &str) -> String {
         let prost_path = self.config.prost_path.as_deref().unwrap_or("::prost");
 
         match field.r#type() {
@@ -981,7 +1000,7 @@ impl<'a> CodeGenerator<'a> {
         local_path
             .map(|_| "super".to_string())
             .chain(ident_path.map(to_snake))
-            .chain(iter::once(to_upper_camel(ident_type)))
+            .chain(iter::once(self.make_type_name(ident_type, ident_type)))
             .join("::")
     }
 
@@ -1220,6 +1239,7 @@ fn build_enum_value_mappings<'a>(
     generated_enum_name: &str,
     do_strip_enum_prefix: bool,
     enum_values: &'a [EnumValueDescriptorProto],
+    mut variant_name_cb: impl FnMut(&str) -> String,
 ) -> Vec<EnumVariantMapping<'a>> {
     let mut numbers = HashSet::new();
     let mut generated_names = HashMap::new();
@@ -1232,7 +1252,8 @@ fn build_enum_value_mappings<'a>(
             continue;
         }
 
-        let mut generated_variant_name = to_upper_camel(value.name());
+        let mut generated_variant_name = variant_name_cb(value.name());
+
         if do_strip_enum_prefix {
             generated_variant_name =
                 strip_enum_prefix(generated_enum_name, &generated_variant_name);
