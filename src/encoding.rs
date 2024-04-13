@@ -1799,4 +1799,33 @@ mod test {
         (String, string),
         (Vec<u8>, bytes)
     ]);
+
+
+    #[test]
+    fn split_varint_decoding() {
+        let mut test_values = Vec::<u64>::with_capacity(10 * 2);
+        test_values.push(128);
+        for i in 2..9 {
+            test_values.push((1 << (7 * i)) - 1);
+            test_values.push(1 << (7 * i));
+        }
+
+        for v in test_values {
+            let mut buf = BytesMut::with_capacity(10);
+            encode_varint(v, &mut buf);
+            let half_len = buf.len() / 2;
+            let len = buf.len();
+            // this weird sequence here splits the buffer into two instances of Bytes
+            // which we then stitch together with `bytes::buf::Buf::chain`
+            // which ensures the varint bytes are not in a single chunk
+            let b2 = buf.split_off(half_len);
+            let mut c = buf.chain(b2);
+
+            // make sure all the bytes are inside
+            assert_eq!(c.remaining(), len);
+            // make sure the first chunk is split as we expected
+            assert_eq!(c.chunk().len(), half_len);
+            assert_eq!(v, decode_varint(&mut c).unwrap());
+        }
+    }
 }
