@@ -1,5 +1,3 @@
-#![doc(html_root_url = "https://docs.rs/prost-types/0.12.2")]
-
 //! Protocol Buffers well-known types.
 //!
 //! Note that the documentation for the types defined in this crate are generated from the Protobuf
@@ -12,7 +10,14 @@
 //!
 //! [1]: https://developers.google.com/protocol-buffers/docs/reference/google.protobuf
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![doc(html_root_url = "https://docs.rs/prost-types/0.12.2")]
+#![no_std]
+
+// See: https://github.com/tokio-rs/prost/pull/1047
+#[cfg(any(feature = "std", test))]
+extern crate std;
+
+extern crate alloc;
 
 #[rustfmt::skip]
 pub mod compiler;

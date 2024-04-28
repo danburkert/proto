@@ -1,6 +1,5 @@
 //! A date/time type which exists primarily to convert [`Timestamp`]s into an RFC 3339 formatted
 //! string.
-
 use core::fmt;
 
 use crate::Duration;
@@ -583,8 +582,11 @@ impl From<DateTime> for Timestamp {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloc::{format, string::ToString};
+
     use proptest::prelude::*;
+
+    use super::*;
 
     #[test]
     fn test_min_max() {
@@ -604,8 +606,8 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "std")]
     #[test]
+    #[cfg(feature = "std")]
     fn test_datetime_from_timestamp() {
         let case = |expected: &str, secs: i64, nanos: i32| {
             let timestamp = Timestamp {

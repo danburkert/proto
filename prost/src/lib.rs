@@ -1,6 +1,10 @@
 #![doc(html_root_url = "https://docs.rs/prost/0.12.2")]
-#![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../../README.md")]
+#![no_std]
+
+// See: https://github.com/tokio-rs/prost/pull/1047
+#[cfg(any(feature = "std", test))]
+extern crate std;
 
 // Re-export the alloc crate for use within derived code.
 #[doc(hidden)]

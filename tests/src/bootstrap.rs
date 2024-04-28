@@ -7,6 +7,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use std::string::String;
 
 /// Test which bootstraps protobuf.rs and compiler.rs from the .proto definitions in the Protobuf
 /// repo. Ensures that the checked-in compiled versions are up-to-date.

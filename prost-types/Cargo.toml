@@ -20,10 +20,10 @@ doctest = false
 
 [features]
 default = ["std"]
-std = ["prost/std"]
+std = ["prost/std", "proptest/std"]
 
 [dependencies]
 prost = { version = "0.12.4", path = "../prost", default-features = false, features = ["prost-derive"] }
 
 [dev-dependencies]
-proptest = "1"
+proptest = { version = "1", default-features = false }

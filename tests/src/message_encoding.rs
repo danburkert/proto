@@ -1,6 +1,5 @@
-use prost::alloc::vec;
-#[cfg(not(feature = "std"))]
-use prost::alloc::{borrow::ToOwned, string::String, vec::Vec};
+use alloc::vec;
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
 
 use prost::bytes::Bytes;
 use prost::{Enumeration, Message, Oneof};

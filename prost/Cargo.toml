@@ -26,7 +26,7 @@ default = ["derive", "std"]
 derive = ["dep:prost-derive"]
 prost-derive = ["derive"]     # deprecated, please use derive feature instead
 no-recursion-limit = []
-std = []
+std = ["proptest/std"]
 
 [dependencies]
 bytes = { version = "1", default-features = false }
@@ -36,7 +36,7 @@ prost-derive = { version = "0.12.4", path = "../prost-derive", optional = true }
 criterion = { version = "0.4", default-features = false }
 env_logger = { version = "0.10", default-features = false }
 log = "0.4"
-proptest = "1"
+proptest = { version = "1", default-features = false }
 rand = "0.8"
 
 [[bench]]

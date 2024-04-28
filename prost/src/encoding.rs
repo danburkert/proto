@@ -1422,7 +1422,6 @@ pub mod btree_map {
 
 #[cfg(test)]
 mod test {
-    #[cfg(not(feature = "std"))]
     use alloc::string::ToString;
     use core::borrow::Borrow;
     use core::fmt::Debug;
