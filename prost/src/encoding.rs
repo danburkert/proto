@@ -11,8 +11,6 @@ use alloc::vec::Vec;
 use core::cmp::min;
 use core::mem;
 use core::str;
-use core::u32;
-use core::usize;
 
 use ::bytes::{Buf, BufMut, Bytes};
 
