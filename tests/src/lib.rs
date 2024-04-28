@@ -3,7 +3,11 @@
     clippy::module_inception,
     clippy::unreadable_literal
 )]
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
+
+// See: https://github.com/tokio-rs/prost/pull/1036
+#[cfg(any(feature = "std", test))]
+extern crate std;
 
 #[macro_use]
 extern crate cfg_if;
@@ -14,7 +18,6 @@ cfg_if! {
     if #[cfg(feature = "edition-2015")] {
         extern crate anyhow;
         extern crate bytes;
-        extern crate core;
         extern crate prost;
         extern crate prost_types;
         extern crate protobuf;
@@ -140,7 +143,6 @@ pub mod default_string_escape {
     include!(concat!(env!("OUT_DIR"), "/default_string_escape.rs"));
 }
 
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 use anyhow::anyhow;
@@ -280,10 +282,8 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use alloc::collections::{BTreeMap, BTreeSet};
     use alloc::vec;
-    #[cfg(not(feature = "std"))]
     use alloc::{borrow::ToOwned, boxed::Box, string::ToString};
 
     use super::*;

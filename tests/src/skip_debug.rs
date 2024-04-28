@@ -1,10 +1,7 @@
 //! Tests for skipping the default Debug implementation.
 
-use std::fmt;
-
-use prost::alloc::format;
-#[cfg(not(feature = "std"))]
-use prost::alloc::string::String;
+use alloc::string::{String, ToString};
+use alloc::{fmt, format};
 
 use crate::custom_debug::{msg, AnEnum, Msg};
 use crate::message_encoding::BasicEnumeration;

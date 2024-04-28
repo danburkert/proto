@@ -11,8 +11,6 @@ use alloc::vec::Vec;
 use core::cmp::min;
 use core::mem;
 use core::str;
-use core::u32;
-use core::usize;
 
 use ::bytes::{Buf, BufMut, Bytes};
 
@@ -1422,7 +1420,6 @@ pub mod btree_map {
 
 #[cfg(test)]
 mod test {
-    #[cfg(not(feature = "std"))]
     use alloc::string::ToString;
     use core::borrow::Borrow;
     use core::fmt::Debug;
