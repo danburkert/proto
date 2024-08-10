@@ -287,6 +287,55 @@ pub mod foo {
 
 [^3]: Annotations have been elided for clarity. See below for a full example.
 
+### Builders
+
+[Builders] can be optionally generated for message types. A builder pattern API
+allows constructing messages with code that does not need to be changed when
+new fields are added to the message definition. For example,
+if a matching builder name `Builder` is configured for this proto message:
+
+```protobuf,ignore
+message Person {
+  string name = 1;
+  repeated PhoneNumber phones = 2;
+}
+```
+
+the following will be generated in addition to the message struct:
+
+```rust,ignore
+impl Person {
+    pub fn builder() -> person::Builder { ... }
+}
+
+pub mod person {
+    #[derive(Default)]
+    pub struct Builder {
+        // ...
+    }
+
+    impl Builder {
+        pub fn name(mut self, value: impl Into<String>) -> Self { ... }
+
+        pub fn phones(
+            mut self,
+            value: impl IntoIterator<Item = impl Into<PhoneNumber>>,
+        ) -> Self {
+            ...
+        }
+
+        pub fn build(self) -> super::Person { ... }
+    }
+}
+```
+
+This can be combined with the `#[non_exhaustive]` attribute on the message struct
+to ensure that field additions, which are backward-compatible accordingly to
+the Protobuf semver convention, do not force semver breaks in a Rust crate that
+provides the generated struct.
+
+[Builders]: https://rust-lang.github.io/api-guidelines/type-safety.html#c-builder
+
 ### Services
 
 `prost-build` allows a custom code-generator to be used for processing `service`

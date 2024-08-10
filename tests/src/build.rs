@@ -238,4 +238,13 @@ fn main() {
         .skip_protoc_run()
         .compile_protos(&[] as &[&str], &[] as &[&str])
         .unwrap();
+
+    prost_build::Config::new()
+        .builder(".builders.ConflictProneScalar", "Fields")
+        .builder(".builders.ConflictProneEnum", "Fields")
+        .builder(".", "Builder")
+        .message_attribute(".builders.EmptyForNow", "#[non_exhaustive]")
+        .boxed(".builders.Zoo.boxed_field")
+        .compile_protos(&[src.join("builders.proto")], includes)
+        .unwrap();
 }

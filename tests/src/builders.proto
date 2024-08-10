@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package builders;
+
+message Evolved {
+  int32 initial_field = 1;
+  repeated string added_field = 2;
+}
+
+enum AnEnum {
+  UNSPECIFIED = 0;
+  A = 1;
+  B = 2;
+}
+
+// This message currently has no fields defined,
+// but for forward compatibility, a builder API is also generated for it.
+message EmptyForNow {}
+
+message Zoo {
+  Evolved message_field = 1;
+  AnEnum enum_field = 2;
+  EmptyForNow boxed_field = 3;
+  oneof oneof_field {
+    int32 a = 4;
+    string b = 5;
+  }
+}
+
+message ConflictProneScalar {
+  optional int32 builder = 1;
+}
+
+message ConflictProneEnum {
+  AnEnum builder = 1;
+}
+
+message ConflictFreeScalar {
+  string builder = 1;
+}
+
+message Keywordy {
+  string type = 1;
+}

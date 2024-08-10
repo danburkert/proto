@@ -272,7 +272,17 @@ impl<'a> CodeGenerator<'a> {
         self.push_indent();
         self.buf.push_str("}\n");
 
-        if !message.enum_type.is_empty() || !nested_types.is_empty() || !oneof_fields.is_empty() {
+        let builder = self.builder_name(&fq_message_name);
+
+        if let Some(builder_name) = &builder {
+            self.append_associated_builder_fn(&message_name, builder_name);
+        }
+
+        if builder.is_some()
+            || !message.enum_type.is_empty()
+            || !nested_types.is_empty()
+            || !oneof_fields.is_empty()
+        {
             self.push_mod(&message_name);
             self.path.push(3);
             for (nested_type, idx) in nested_types {
@@ -292,6 +302,16 @@ impl<'a> CodeGenerator<'a> {
 
             for oneof in &oneof_fields {
                 self.append_oneof(&fq_message_name, oneof);
+            }
+
+            if let Some(builder_name) = &builder {
+                self.append_builder(
+                    builder_name,
+                    &message_name,
+                    &fq_message_name,
+                    &fields,
+                    &oneof_fields,
+                );
             }
 
             self.pop_mod();
@@ -679,6 +699,233 @@ impl<'a> CodeGenerator<'a> {
         self.depth -= 1;
         self.path.pop();
 
+        self.push_indent();
+        self.buf.push_str("}\n");
+    }
+
+    fn builder_name(&self, fq_message_name: &str) -> Option<String> {
+        self.config
+            .builders
+            .get_first(fq_message_name)
+            .map(|name| name.to_owned())
+    }
+
+    fn append_associated_builder_fn(&mut self, message_name: &str, builder_name: &str) {
+        let mod_name = to_snake(message_name);
+        let struct_name = to_upper_camel(message_name);
+        let builder_fn_name = to_snake(builder_name);
+        let mq_builder_name = format!("{mod_name}::{builder_name}");
+
+        self.push_indent();
+        self.buf.push_str("impl ");
+        self.buf.push_str(&struct_name);
+        self.buf.push_str(" {\n");
+        self.depth += 1;
+
+        self.push_indent();
+        self.buf.push_str("/// Starts a builder for `");
+        self.buf.push_str(&struct_name);
+        self.buf.push_str("`.\n");
+        self.push_indent();
+        self.buf
+            .push_str("/// All fields are initialized with default values.\n");
+        self.push_indent();
+        self.buf.push_str("#[inline]\n");
+        self.push_indent();
+        self.buf.push_str("pub fn ");
+        self.buf.push_str(&builder_fn_name);
+        self.buf.push_str("() -> ");
+        self.buf.push_str(&mq_builder_name);
+        self.buf.push_str(" {\n");
+        self.depth += 1;
+        self.push_indent();
+        self.buf.push_str("Default::default()\n");
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+    }
+
+    fn append_builder(
+        &mut self,
+        builder_name: &str,
+        message_name: &str,
+        fq_message_name: &str,
+        fields: &[Field],
+        oneof_fields: &[OneofField],
+    ) {
+        debug!("  builder: {:?}", message_name);
+
+        let struct_name = to_upper_camel(message_name);
+
+        // Generate builder struct
+        self.push_indent();
+        self.buf.push_str(&format!(
+            "/// Builder for [`{struct_name}`](super::{struct_name})\n"
+        ));
+        self.push_indent();
+        self.buf.push_str("#[derive(Clone, Default)]\n");
+        self.push_indent();
+        self.buf.push_str("pub struct ");
+        self.buf.push_str(builder_name);
+        self.buf.push_str(" {\n");
+        self.depth += 1;
+
+        self.push_indent();
+        self.buf.push_str("inner: super::");
+        self.buf.push_str(&struct_name);
+        self.buf.push_str(",\n");
+
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+
+        // Generate impl item with setter methods and the build method
+        self.push_indent();
+        self.buf.push_str("impl ");
+        self.buf.push_str(builder_name);
+        self.buf.push_str(" {\n");
+        self.depth += 1;
+
+        for field in fields {
+            self.append_builder_field_setter(fq_message_name, field);
+        }
+
+        for oneof in oneof_fields {
+            self.append_builder_oneof_field_setter(oneof);
+        }
+
+        self.push_indent();
+        self.buf.push_str("#[inline]\n");
+        self.push_indent();
+        self.buf.push_str("pub fn build(self) -> super::");
+        self.buf.push_str(&struct_name);
+        self.buf.push_str(" {\n");
+        self.depth += 1;
+        self.push_indent();
+        self.buf.push_str("self.inner\n");
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+
+        self.push_indent();
+        self.buf.push_str("impl From<");
+        self.buf.push_str(builder_name);
+        self.buf.push_str("> for super::");
+        self.buf.push_str(&struct_name);
+        self.buf.push_str(" {\n");
+        self.depth += 1;
+        self.push_indent();
+        self.buf.push_str("#[inline]\n");
+        self.push_indent();
+        self.buf.push_str("fn from(builder: ");
+        self.buf.push_str(builder_name);
+        self.buf.push_str(") -> Self {\n");
+        self.depth += 1;
+        self.push_indent();
+        self.buf.push_str("builder.inner\n");
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+    }
+
+    fn append_builder_field_setter(&mut self, fq_message_name: &str, field: &Field) {
+        let rust_name = field.rust_name();
+        let repeated = field.descriptor.label == Some(Label::Repeated as i32);
+        let deprecated = self.deprecated(&field.descriptor);
+        let optional = self.optional(&field.descriptor);
+        let boxed = self.boxed(&field.descriptor, fq_message_name, None);
+        let ty = self.resolve_type(&field.descriptor, fq_message_name);
+
+        let prost_path = prost_path(self.config);
+        let arg_type = if field.descriptor.r#type() == Type::Enum {
+            // Enums are special: the field type is i32, but for the setter
+            // we want the accompanying enumeration type.
+            self.resolve_ident(field.descriptor.type_name())
+        } else {
+            let arg_bound = if boxed {
+                format!("Into<{}::alloc::boxed::Box<{}>>", prost_path, ty)
+            } else {
+                format!("Into<{}>", ty)
+            };
+            if repeated {
+                format!("impl IntoIterator<Item = impl {}>", arg_bound)
+            } else {
+                format!("impl {}", arg_bound)
+            }
+        };
+
+        debug!("    field setter: {:?}, arg: {:?}", rust_name, arg_type);
+
+        if deprecated {
+            self.push_indent();
+            self.buf.push_str("#[deprecated]\n");
+        }
+        self.push_indent();
+        self.buf.push_str("#[inline]\n");
+        self.push_indent();
+        self.buf.push_str("pub fn ");
+        self.buf.push_str(&rust_name);
+        self.buf.push_str("(mut self, value: ");
+        self.buf.push_str(&arg_type);
+        self.buf.push_str(") -> Self {\n");
+        self.depth += 1;
+
+        self.push_indent();
+        self.buf.push_str("self.inner.");
+        self.buf.push_str(&rust_name);
+        self.buf.push_str(" = ");
+        if repeated {
+            self.buf
+                .push_str("value.into_iter().map(Into::into).collect();\n");
+        } else if optional {
+            self.buf.push_str("Some(value.into());\n")
+        } else {
+            self.buf.push_str("value.into();\n")
+        }
+
+        self.push_indent();
+        self.buf.push_str("self\n");
+        self.depth -= 1;
+        self.push_indent();
+        self.buf.push_str("}\n");
+    }
+
+    fn append_builder_oneof_field_setter(&mut self, oneof: &OneofField) {
+        let rust_name = oneof.rust_name();
+        let ty = to_upper_camel(oneof.descriptor.name());
+
+        debug!("    oneof field setter: {:?}, arg: {:?}", rust_name, ty);
+
+        self.push_indent();
+        self.buf.push_str("#[inline]\n");
+        self.push_indent();
+        self.buf.push_str("pub fn ");
+        self.buf.push_str(&rust_name);
+        self.buf.push_str("(mut self, value: ");
+        self.buf.push_str(&ty);
+        self.buf.push_str(") -> Self {\n");
+        self.depth += 1;
+
+        self.push_indent();
+        self.buf.push_str("self.inner.");
+        self.buf.push_str(&rust_name);
+        self.buf.push_str(" = Some(value);\n");
+
+        self.push_indent();
+        self.buf.push_str("self\n");
+
+        self.depth -= 1;
         self.push_indent();
         self.buf.push_str("}\n");
     }
