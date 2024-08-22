@@ -199,8 +199,7 @@ impl fmt::Display for TimestampError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for TimestampError {}
+impl core::error::Error for TimestampError {}
 
 #[cfg(feature = "std")]
 impl TryFrom<Timestamp> for std::time::SystemTime {

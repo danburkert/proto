@@ -26,7 +26,7 @@ authors = [
 ]
 license = "Apache-2.0"
 repository = "https://github.com/tokio-rs/prost"
-rust-version = "1.71.1"
+rust-version = "1.81"
 edition = "2021"
 
 [profile.bench]
