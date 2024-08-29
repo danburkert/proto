@@ -89,7 +89,7 @@ pub mod descriptor_proto {
     /// Range of reserved tag numbers. Reserved tag numbers may not be used by
     /// fields or extension ranges in the same message. Reserved ranges may
     /// not overlap.
-    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct ReservedRange {
         /// Inclusive.
         #[prost(int32, optional, tag = "1")]
@@ -350,7 +350,7 @@ pub mod enum_descriptor_proto {
     /// Note that this is distinct from DescriptorProto.ReservedRange in that it
     /// is inclusive such that it can appropriately represent the entire int32
     /// domain.
-    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct EnumReservedRange {
         /// Inclusive.
         #[prost(int32, optional, tag = "1")]
@@ -961,7 +961,7 @@ pub mod uninterpreted_option {
     /// extension (denoted with parentheses in options specs in .proto files).
     /// E.g.,{ \["foo", false\], \["bar.baz", true\], \["qux", false\] } represents
     /// "foo.(bar.baz).qux".
-    #[derive(Clone, PartialEq, ::prost::Message)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct NamePart {
         #[prost(string, required, tag = "1")]
         pub name_part: ::prost::alloc::string::String,
@@ -1022,7 +1022,7 @@ pub struct SourceCodeInfo {
 }
 /// Nested message and enum types in `SourceCodeInfo`.
 pub mod source_code_info {
-    #[derive(Clone, PartialEq, ::prost::Message)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Location {
         /// Identifies which part of the FileDescriptorProto was defined at this
         /// location.
@@ -1125,7 +1125,7 @@ pub struct GeneratedCodeInfo {
 }
 /// Nested message and enum types in `GeneratedCodeInfo`.
 pub mod generated_code_info {
-    #[derive(Clone, PartialEq, ::prost::Message)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Annotation {
         /// Identifies the element in the original source .proto file. This field
         /// is formatted the same as SourceCodeInfo.Location.path.
@@ -1238,7 +1238,7 @@ pub mod generated_code_info {
 ///    "value": "1.212s"
 /// }
 /// ```
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Any {
     /// A URL/resource name that uniquely identifies the type of the serialized
     /// protocol buffer message. This string must contain at least
@@ -1275,7 +1275,7 @@ pub struct Any {
 }
 /// `SourceContext` represents information about the source of a
 /// protobuf element, like the file in which it is defined.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SourceContext {
     /// The path-qualified name of the .proto file that contained the associated
     /// protobuf element.  For example: `"google/protobuf/source_context.proto"`.
@@ -1531,7 +1531,7 @@ pub struct EnumValue {
 }
 /// A protocol buffer option, which can be attached to a message, field,
 /// enumeration, etc.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Option {
     /// The option's name. For protobuf built-in options (options defined in
     /// descriptor.proto), this is the short name. For example, `"map_entry"`.
@@ -1741,7 +1741,7 @@ pub struct Method {
 ///    ...
 /// }
 /// ```
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Mixin {
     /// The fully qualified name of the interface which is included.
     #[prost(string, tag = "1")]
@@ -1815,7 +1815,7 @@ pub struct Mixin {
 /// encoded in JSON format as "3s", while 3 seconds and 1 nanosecond should
 /// be expressed in JSON format as "3.000000001s", and 3 seconds and 1
 /// microsecond should be expressed in JSON format as "3.000001s".
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Duration {
     /// Signed seconds of the span of time. Must be from -315,576,000,000
     /// to +315,576,000,000 inclusive. Note: these bounds are computed from:
@@ -2053,7 +2053,7 @@ pub struct Duration {
 /// The implementation of any API method which has a FieldMask type field in the
 /// request should verify the included field paths, and return an
 /// `INVALID_ARGUMENT` error if any path is unmappable.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FieldMask {
     /// The set of field mask paths.
     #[prost(string, repeated, tag = "1")]
@@ -2249,7 +2249,7 @@ impl NullValue {
 /// [`strftime`](<https://docs.python.org/2/library/time.html#time.strftime>) with
 /// the time format spec '%Y-%m-%dT%H:%M:%S.%fZ'. Likewise, in Java, one can use
 /// the Joda Time's [`ISODateTimeFormat.dateTime()`](<http://www.joda.org/joda-time/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTime%2D%2D>) to obtain a formatter capable of generating timestamps in this format.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Timestamp {
     /// Represents seconds of UTC time since Unix epoch
     /// 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to

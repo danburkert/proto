@@ -153,4 +153,47 @@ impl MessageGraph {
             )
         }
     }
+
+    /// Returns `true` if this message can automatically derive Eq trait.
+    pub fn can_message_derive_eq(&self, fq_message_name: &str) -> bool {
+        assert_eq!(".", &fq_message_name[..1]);
+
+        let msg = self.messages.get(fq_message_name).unwrap();
+        msg.field
+            .iter()
+            .all(|field| self.can_field_derive_eq(fq_message_name, field))
+    }
+
+    /// Returns `true` if the type of this field allows deriving the Eq trait.
+    pub fn can_field_derive_eq(&self, fq_message_name: &str, field: &FieldDescriptorProto) -> bool {
+        assert_eq!(".", &fq_message_name[..1]);
+
+        if field.r#type() == Type::Message {
+            if field.label() == Label::Repeated
+                || self.is_nested(field.type_name(), fq_message_name)
+            {
+                false
+            } else {
+                self.can_message_derive_eq(field.type_name())
+            }
+        } else {
+            matches!(
+                field.r#type(),
+                Type::Int32
+                    | Type::Int64
+                    | Type::Uint32
+                    | Type::Uint64
+                    | Type::Sint32
+                    | Type::Sint64
+                    | Type::Fixed32
+                    | Type::Fixed64
+                    | Type::Sfixed32
+                    | Type::Sfixed64
+                    | Type::Bool
+                    | Type::Enum
+                    | Type::String
+                    | Type::Bytes
+            )
+        }
+    }
 }

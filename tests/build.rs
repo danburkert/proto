@@ -38,7 +38,7 @@ fn main() {
     config.type_attribute("Foo.Custom.Attrs.AnotherEnum", "/// Oneof docs");
     config.type_attribute(
         "Foo.Custom.OneOfAttrs.Msg.field",
-        "#[derive(Eq, PartialOrd, Ord)]",
+        "#[derive(PartialOrd, Ord)]",
     );
     config.field_attribute("Foo.Custom.Attrs.AnotherEnum.C", "/// The C docs");
     config.field_attribute("Foo.Custom.Attrs.AnotherEnum.D", "/// The D docs");

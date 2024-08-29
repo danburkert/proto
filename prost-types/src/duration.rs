@@ -1,13 +1,5 @@
 use super::*;
 
-#[cfg(feature = "std")]
-impl std::hash::Hash for Duration {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.seconds.hash(state);
-        self.nanos.hash(state);
-    }
-}
-
 impl Duration {
     /// Normalizes the duration to a canonical format.
     ///
