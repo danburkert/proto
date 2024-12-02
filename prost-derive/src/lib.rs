@@ -10,8 +10,8 @@ use itertools::Itertools;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
-    punctuated::Punctuated, Data, DataEnum, DataStruct, DeriveInput, Expr, Fields, FieldsNamed,
-    FieldsUnnamed, Ident, Index, Variant,
+    parse_quote, punctuated::Punctuated, Attribute, Data, DataEnum, DataStruct, DeriveInput, Expr,
+    Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Variant,
 };
 
 mod field;
@@ -274,8 +274,9 @@ fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
     };
 
     // Map the variants into 'fields'.
-    let mut variants: Vec<(Ident, Expr)> = Vec::new();
+    let mut variants: Vec<(Ident, Expr, Option<Attribute>)> = Vec::new();
     for Variant {
+        attrs,
         ident,
         fields,
         discriminant,
@@ -288,9 +289,15 @@ fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
                 bail!("Enumeration variants may not have fields")
             }
         }
-
         match discriminant {
-            Some((_, expr)) => variants.push((ident, expr)),
+            Some((_, expr)) => {
+                let deprecated_attr = if attrs.contains(&parse_quote! { #[deprecated] }) {
+                    Some(parse_quote!(#[allow(deprecated)]))
+                } else {
+                    None
+                };
+                variants.push((ident, expr, deprecated_attr))
+            }
             None => bail!("Enumeration variants must have a discriminant"),
         }
     }
@@ -299,16 +306,16 @@ fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
         panic!("Enumeration must have at least one variant");
     }
 
-    let default = variants[0].0.clone();
+    let (default, _, default_deprecated) = variants[0].clone();
 
-    let is_valid = variants.iter().map(|(_, value)| quote!(#value => true));
+    let is_valid = variants.iter().map(|(_, value, _)| quote!(#value => true));
     let from = variants
         .iter()
-        .map(|(variant, value)| quote!(#value => ::core::option::Option::Some(#ident::#variant)));
+        .map(|(variant, value, deprecated)| quote!(#value => ::core::option::Option::Some(#deprecated #ident::#variant)));
 
     let try_from = variants
         .iter()
-        .map(|(variant, value)| quote!(#value => ::core::result::Result::Ok(#ident::#variant)));
+        .map(|(variant, value, deprecated)| quote!(#value => ::core::result::Result::Ok(#deprecated #ident::#variant)));
 
     let is_valid_doc = format!("Returns `true` if `value` is a variant of `{}`.", ident);
     let from_i32_doc = format!(
@@ -338,7 +345,7 @@ fn try_enumeration(input: TokenStream) -> Result<TokenStream, Error> {
 
         impl #impl_generics ::core::default::Default for #ident #ty_generics #where_clause {
             fn default() -> #ident {
-                #ident::#default
+                #default_deprecated #ident::#default
             }
         }
 
@@ -460,6 +467,7 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
     });
 
     let expanded = quote! {
+        #[allow(deprecated)]
         impl #impl_generics #ident #ty_generics #where_clause {
             /// Encodes the message to a buffer.
             pub fn encode(&self, buf: &mut impl ::prost::bytes::BufMut) {
@@ -508,6 +516,7 @@ fn try_oneof(input: TokenStream) -> Result<TokenStream, Error> {
         quote! {
             #expanded
 
+            #[allow(deprecated)]
             impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #where_clause {
                 fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
                     match *self {

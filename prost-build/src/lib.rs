@@ -581,4 +581,27 @@ mod tests {
         let actual = String::from_utf8(buf).unwrap();
         assert_eq_fixture_contents!("src/fixtures/write_includes/_.includes.rs", actual);
     }
+
+    #[test]
+    fn test_generate_deprecated() {
+        let _ = env_logger::try_init();
+        let state = Rc::new(RefCell::new(MockState::default()));
+        let gen = MockServiceGenerator::new(Rc::clone(&state));
+        let tempdir = tempfile::tempdir().unwrap();
+
+        Config::new()
+            .service_generator(Box::new(gen))
+            .out_dir(tempdir.path())
+            .compile_protos(
+                &["src/fixtures/deprecated/all_deprecated.proto"],
+                &["src/fixtures/deprecated"],
+            )
+            .unwrap();
+        let expected = read_all_content("src/fixtures/deprecated/_all_deprecated.rs");
+        let actual = read_all_content(tempdir.path().join("all_deprecated.rs"));
+        // Normalizes windows and Linux-style EOL
+        let expected = expected.replace("\r\n", "\n");
+        let actual = actual.replace("\r\n", "\n");
+        assert_eq!(expected, actual);
+    }
 }

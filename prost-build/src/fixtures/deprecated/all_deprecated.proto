@@ -1,18 +1,14 @@
 syntax = "proto3";
 
-package deprecated_field;
+package all_deprecated;
 
 message Test {
-  string not_outdated = 1;
-  string outdated = 2 [deprecated = true];
-
   oneof test3 {
-    string oneof_not_outdated = 3;
     string oneof_outdated = 4 [deprecated = true];
   }
 }
 
 enum Test2 {
-  not_outdated = 0;
+  not_outdated = 0 [deprecated = true];
   outdated = 1 [deprecated = true];
 }
