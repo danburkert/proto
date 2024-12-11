@@ -34,7 +34,7 @@ fn main() {
     );
     config.type_attribute(
         "Foo.Custom.OneOfAttrs.Msg.field",
-        "#[derive(Eq, PartialOrd, Ord)]",
+        "#[derive(PartialOrd, Ord)]",
     );
 
     config.file_descriptor_set_path(
