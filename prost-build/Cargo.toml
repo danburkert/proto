@@ -23,7 +23,6 @@ petgraph = { version = "0.6", default-features = false }
 prost = { version = "0.13.4", path = "../prost", default-features = false }
 prost-types = { version = "0.13.4", path = "../prost-types", default-features = false }
 tempfile = "3"
-once_cell = "1.17.1"
 regex = { version = "1.8.1", default-features = false, features = ["std", "unicode-bool"] }
 
 # feature: format
