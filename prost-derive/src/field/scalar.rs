@@ -5,13 +5,14 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse_str, Expr, ExprLit, Ident, Index, Lit, LitByteStr, Meta, MetaNameValue, Path};
 
-use crate::field::{bool_attr, set_option, tag_attr, Label};
+use crate::field::{bool_attr, set_option, tag_attr, EnumType, Label};
 
 /// A scalar protobuf field.
 #[derive(Clone)]
 pub struct Field {
     pub ty: Ty,
     pub kind: Kind,
+    pub enum_type: Option<EnumType>,
     pub tag: u32,
 }
 
@@ -20,6 +21,7 @@ impl Field {
         let mut ty = None;
         let mut label = None;
         let mut packed = None;
+        let mut enum_type = None;
         let mut default = None;
         let mut tag = None;
 
@@ -34,6 +36,8 @@ impl Field {
                 set_option(&mut tag, t, "duplicate tag attributes")?;
             } else if let Some(l) = Label::from_attr(attr) {
                 set_option(&mut label, l, "duplicate label attributes")?;
+            } else if let Some(t) = EnumType::from_attr(attr)? {
+                set_option(&mut enum_type, t, "duplicate enum_type attributes")?;
             } else if let Some(d) = DefaultValue::from_attr(attr)? {
                 set_option(&mut default, d, "duplicate default attributes")?;
             } else {
@@ -86,7 +90,12 @@ impl Field {
             (Some(Label::Repeated), _, false) => Kind::Repeated,
         };
 
-        Ok(Some(Field { ty, kind, tag }))
+        Ok(Some(Field {
+            ty,
+            kind,
+            enum_type,
+            tag,
+        }))
     }
 
     pub fn new_oneof(attrs: &[Meta]) -> Result<Option<Field>, Error> {
@@ -106,7 +115,7 @@ impl Field {
     }
 
     pub fn encode(&self, ident: TokenStream) -> TokenStream {
-        let module = self.ty.module();
+        let module = self.ty.module(self.enum_type);
         let encode_fn = match self.kind {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(encode),
             Kind::Repeated => quote!(encode_repeated),
@@ -117,7 +126,7 @@ impl Field {
 
         match self.kind {
             Kind::Plain(ref default) => {
-                let default = default.typed();
+                let default = default.typed(self.enum_type);
                 quote! {
                     if #ident != #default {
                         #encode_fn(#tag, &#ident, buf);
@@ -138,7 +147,7 @@ impl Field {
     /// Returns an expression which evaluates to the result of merging a decoded
     /// scalar value into the field.
     pub fn merge(&self, ident: TokenStream) -> TokenStream {
-        let module = self.ty.module();
+        let module = self.ty.module(self.enum_type);
         let merge_fn = match self.kind {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(merge),
             Kind::Repeated | Kind::Packed => quote!(merge_repeated),
@@ -160,7 +169,7 @@ impl Field {
 
     /// Returns an expression which evaluates to the encoded length of the field.
     pub fn encoded_len(&self, ident: TokenStream) -> TokenStream {
-        let module = self.ty.module();
+        let module = self.ty.module(self.enum_type);
         let encoded_len_fn = match self.kind {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(encoded_len),
             Kind::Repeated => quote!(encoded_len_repeated),
@@ -171,7 +180,7 @@ impl Field {
 
         match self.kind {
             Kind::Plain(ref default) => {
-                let default = default.typed();
+                let default = default.typed(self.enum_type);
                 quote! {
                     if #ident != #default {
                         #encoded_len_fn(#tag, &#ident)
@@ -192,7 +201,7 @@ impl Field {
     pub fn clear(&self, ident: TokenStream) -> TokenStream {
         match self.kind {
             Kind::Plain(ref default) | Kind::Required(ref default) => {
-                let default = default.typed();
+                let default = default.typed(self.enum_type);
                 match self.ty {
                     Ty::String | Ty::Bytes(..) => quote!(#ident.clear()),
                     _ => quote!(#ident = #default),
@@ -206,7 +215,7 @@ impl Field {
     /// Returns an expression which evaluates to the default value of the field.
     pub fn default(&self) -> TokenStream {
         match self.kind {
-            Kind::Plain(ref value) | Kind::Required(ref value) => value.owned(),
+            Kind::Plain(ref value) | Kind::Required(ref value) => value.owned(self.enum_type),
             Kind::Optional(_) => quote!(::core::option::Option::None),
             Kind::Repeated | Kind::Packed => quote!(::prost::alloc::vec::Vec::new()),
         }
@@ -214,8 +223,8 @@ impl Field {
 
     /// An inner debug wrapper, around the base type.
     fn debug_inner(&self, wrap_name: TokenStream) -> TokenStream {
-        if let Ty::Enumeration(ref ty) = self.ty {
-            quote! {
+        match (&self.ty, self.enum_type) {
+            (Ty::Enumeration(ty), None) => quote! {
                 struct #wrap_name<'a>(&'a i32);
                 impl<'a> ::core::fmt::Debug for #wrap_name<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
@@ -226,19 +235,29 @@ impl Field {
                         }
                     }
                 }
-            }
-        } else {
-            quote! {
+            },
+            (Ty::Enumeration(ty), Some(EnumType::Open)) => quote! {
+                struct #wrap_name<'a>(&'a ::prost::OpenEnum<#ty>);
+                impl<'a> ::core::fmt::Debug for #wrap_name<'a> {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                        match &self.0 {
+                            ::prost::OpenEnum::Known(en) => ::core::fmt::Debug::fmt(en, f),
+                            ::prost::OpenEnum::Unknown(_) => ::core::fmt::Debug::fmt(&self.0, f),
+                        }
+                    }
+                }
+            },
+            _ => quote! {
                 #[allow(non_snake_case)]
                 fn #wrap_name<T>(v: T) -> T { v }
-            }
+            },
         }
     }
 
     /// Returns a fragment for formatting the field `ident` in `Debug`.
     pub fn debug(&self, wrapper_name: TokenStream) -> TokenStream {
         let wrapper = self.debug_inner(quote!(Inner));
-        let inner_ty = self.ty.rust_type();
+        let inner_ty = self.ty.owned_type(self.enum_type);
         match self.kind {
             Kind::Plain(_) | Kind::Required(_) => self.debug_inner(wrapper_name),
             Kind::Optional(_) => quote! {
@@ -287,14 +306,14 @@ impl Field {
         if let Ty::Enumeration(ref ty) = self.ty {
             let set = Ident::new(&format!("set_{}", ident_str), Span::call_site());
             let set_doc = format!("Sets `{}` to the provided enum value.", ident_str);
-            Some(match self.kind {
-                Kind::Plain(ref default) | Kind::Required(ref default) => {
+            match &self.kind {
+                Kind::Plain(default) | Kind::Required(default) if self.enum_type.is_none() => {
                     let get_doc = format!(
                         "Returns the enum value of `{}`, \
                          or the default if the field is set to an invalid enum value.",
                         ident_str,
                     );
-                    quote! {
+                    Some(quote! {
                         #[doc=#get_doc]
                         pub fn #get(&self) -> #ty {
                             ::core::convert::TryFrom::try_from(self.#ident).unwrap_or(#default)
@@ -304,37 +323,75 @@ impl Field {
                         pub fn #set(&mut self, value: #ty) {
                             self.#ident = value as i32;
                         }
-                    }
+                    })
                 }
-                Kind::Optional(ref default) => {
+                Kind::Optional(default) => {
                     let get_doc = format!(
                         "Returns the enum value of `{}`, \
-                         or the default if the field is unset or set to an invalid enum value.",
+                        or the default if the field is unset{}.",
                         ident_str,
+                        if self.enum_type.is_some() {
+                            ""
+                        } else {
+                            " or set to an invalid enum value"
+                        },
                     );
-                    quote! {
+                    let get_ty = match self.enum_type {
+                        None | Some(EnumType::Closed) => quote!(#ty),
+                        Some(EnumType::Open) => quote!(::prost::OpenEnum<#ty>),
+                    };
+                    let (get_body, convert_set) = match self.enum_type {
+                        None => (
+                            quote! {
+                                self.#ident
+                                    .and_then(|value| {
+                                        let result: ::core::result::Result<#ty, _> =
+                                            ::core::convert::TryFrom::try_from(value);
+                                        result.ok()
+                                    })
+                                    .unwrap_or(#default)
+                            },
+                            quote! {
+                                value as i32
+                            },
+                        ),
+                        Some(EnumType::Open) => (
+                            quote! {
+                                self.#ident.unwrap_or(::prost::OpenEnum::Known(#default))
+                            },
+                            quote! {
+                                ::prost::OpenEnum::Known(value)
+                            },
+                        ),
+                        Some(EnumType::Closed) => (
+                            quote! {
+                                self.#ident.unwrap_or(#default)
+                            },
+                            quote! {
+                                value
+                            },
+                        ),
+                    };
+                    Some(quote! {
                         #[doc=#get_doc]
-                        pub fn #get(&self) -> #ty {
-                            self.#ident.and_then(|x| {
-                                let result: ::core::result::Result<#ty, _> = ::core::convert::TryFrom::try_from(x);
-                                result.ok()
-                            }).unwrap_or(#default)
+                        pub fn #get(&self) -> #get_ty {
+                            #get_body
                         }
 
                         #[doc=#set_doc]
                         pub fn #set(&mut self, value: #ty) {
-                            self.#ident = ::core::option::Option::Some(value as i32);
+                            self.#ident = ::core::option::Option::Some(#convert_set);
                         }
-                    }
+                    })
                 }
-                Kind::Repeated | Kind::Packed => {
+                Kind::Repeated | Kind::Packed if self.enum_type.is_none() => {
                     let iter_doc = format!(
                         "Returns an iterator which yields the valid enum values contained in `{}`.",
                         ident_str,
                     );
                     let push = Ident::new(&format!("push_{}", ident_str), Span::call_site());
                     let push_doc = format!("Appends the provided enum value to `{}`.", ident_str);
-                    quote! {
+                    Some(quote! {
                         #[doc=#iter_doc]
                         pub fn #get(&self) -> ::core::iter::FilterMap<
                             ::core::iter::Cloned<::core::slice::Iter<i32>>,
@@ -349,11 +406,12 @@ impl Field {
                         pub fn #push(&mut self, value: #ty) {
                             self.#ident.push(value as i32);
                         }
-                    }
+                    })
                 }
-            })
+                _ => None,
+            }
         } else if let Kind::Optional(ref default) = self.kind {
-            let ty = self.ty.rust_ref_type();
+            let ty = self.ty.ref_type();
 
             let match_some = if self.ty.is_numeric() {
                 quote!(::core::option::Option::Some(val) => val,)
@@ -528,18 +586,21 @@ impl Ty {
         }
     }
 
-    // TODO: rename to 'owned_type'.
-    pub fn rust_type(&self) -> TokenStream {
+    pub fn owned_type(&self, enum_type: Option<EnumType>) -> TokenStream {
         match self {
             Ty::String => quote!(::prost::alloc::string::String),
             Ty::Bytes(ty) => ty.rust_type(),
-            _ => self.rust_ref_type(),
+            Ty::Enumeration(path) => match enum_type {
+                None => quote!(i32),
+                Some(EnumType::Open) => quote!(::prost::OpenEnum<#path>),
+                Some(EnumType::Closed) => quote!(#path),
+            },
+            _ => self.ref_type(),
         }
     }
 
-    // TODO: rename to 'ref_type'
-    pub fn rust_ref_type(&self) -> TokenStream {
-        match *self {
+    pub fn ref_type(&self) -> TokenStream {
+        match self {
             Ty::Double => quote!(f64),
             Ty::Float => quote!(f32),
             Ty::Int32 => quote!(i32),
@@ -555,15 +616,18 @@ impl Ty {
             Ty::Bool => quote!(bool),
             Ty::String => quote!(&str),
             Ty::Bytes(..) => quote!(&[u8]),
-            Ty::Enumeration(..) => quote!(i32),
+            Ty::Enumeration(..) => panic!("references to enum values are not used in derived code"),
         }
     }
 
-    pub fn module(&self) -> Ident {
-        match *self {
-            Ty::Enumeration(..) => Ident::new("int32", Span::call_site()),
-            _ => Ident::new(self.as_str(), Span::call_site()),
-        }
+    pub fn module(&self, enum_type: Option<EnumType>) -> Ident {
+        let name = match (self, enum_type) {
+            (Ty::Enumeration(..), None) => "int32",
+            (Ty::Enumeration(..), Some(EnumType::Open)) => "open_enum",
+            (Ty::Enumeration(..), Some(EnumType::Closed)) => "closed_enum",
+            _ => self.as_str(),
+        };
+        Ident::new(name, Span::call_site())
     }
 
     /// Returns false if the scalar type is length delimited (i.e., `string` or `bytes`).
@@ -779,7 +843,7 @@ impl DefaultValue {
         }
     }
 
-    pub fn owned(&self) -> TokenStream {
+    pub fn owned(&self, enum_type: Option<EnumType>) -> TokenStream {
         match *self {
             DefaultValue::String(ref value) if value.is_empty() => {
                 quote!(::prost::alloc::string::String::new())
@@ -793,15 +857,17 @@ impl DefaultValue {
                 quote!(#lit.as_ref().into())
             }
 
-            ref other => other.typed(),
+            ref other => other.typed(enum_type),
         }
     }
 
-    pub fn typed(&self) -> TokenStream {
-        if let DefaultValue::Enumeration(_) = *self {
-            quote!(#self as i32)
-        } else {
-            quote!(#self)
+    pub fn typed(&self, enum_type: Option<EnumType>) -> TokenStream {
+        match (self, enum_type) {
+            (DefaultValue::Enumeration(..), None) => quote!(#self as i32),
+            (DefaultValue::Enumeration(..), Some(EnumType::Open)) => {
+                quote!(::prost::OpenEnum::Known(#self))
+            }
+            _ => quote!(#self),
         }
     }
 }

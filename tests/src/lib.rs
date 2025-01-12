@@ -308,7 +308,7 @@ mod tests {
                 t: BTreeMap::<i32, foo::bar_baz::FooBarBaz>::new(),
                 nested_self: None,
             }],
-            p_i_e: 0,
+            p_i_e: foo::bar_baz::foo_bar_baz::StrawberryRhubarbPie::Foo.into(),
             r#as: 4,
             r#break: 5,
             r#const: 6,

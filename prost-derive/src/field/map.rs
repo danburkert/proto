@@ -4,7 +4,7 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::{Expr, ExprLit, Ident, Lit, Meta, MetaNameValue, Token};
 
-use crate::field::{scalar, set_option, tag_attr};
+use crate::field::{scalar, set_option, tag_attr, EnumType};
 
 #[derive(Clone, Debug)]
 pub enum MapTy {
@@ -36,11 +36,12 @@ impl MapTy {
     }
 }
 
-fn fake_scalar(ty: scalar::Ty) -> scalar::Field {
+fn fake_scalar(ty: scalar::Ty, enum_type: Option<EnumType>) -> scalar::Field {
     let kind = scalar::Kind::Plain(scalar::DefaultValue::new(&ty));
     scalar::Field {
         ty,
         kind,
+        enum_type,
         tag: 0, // Not used here
     }
 }
@@ -50,6 +51,7 @@ pub struct Field {
     pub map_ty: MapTy,
     pub key_ty: scalar::Ty,
     pub value_ty: ValueTy,
+    pub enum_type: Option<EnumType>,
     pub tag: u32,
 }
 
@@ -57,10 +59,13 @@ impl Field {
     pub fn new(attrs: &[Meta], inferred_tag: Option<u32>) -> Result<Option<Field>, Error> {
         let mut types = None;
         let mut tag = None;
+        let mut enum_type = None;
 
         for attr in attrs {
             if let Some(t) = tag_attr(attr)? {
                 set_option(&mut tag, t, "duplicate tag attributes")?;
+            } else if let Some(et) = EnumType::from_attr(attr)? {
+                set_option(&mut enum_type, et, "duplicate enum_type attributes")?;
             } else if let Some(map_ty) = attr
                 .path()
                 .get_ident()
@@ -113,6 +118,7 @@ impl Field {
                 map_ty,
                 key_ty,
                 value_ty,
+                enum_type,
                 tag,
             }),
             _ => None,
@@ -126,12 +132,12 @@ impl Field {
     /// Returns a statement which encodes the map field.
     pub fn encode(&self, ident: TokenStream) -> TokenStream {
         let tag = self.tag;
-        let key_mod = self.key_ty.module();
+        let key_mod = self.key_ty.module(None);
         let ke = quote!(::prost::encoding::#key_mod::encode);
         let kl = quote!(::prost::encoding::#key_mod::encoded_len);
         let module = self.map_ty.module();
         match &self.value_ty {
-            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
+            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) if self.enum_type.is_none() => {
                 let default = quote!(#ty::default() as i32);
                 quote! {
                     ::prost::encoding::#module::encode_with_default(
@@ -147,7 +153,7 @@ impl Field {
                 }
             }
             ValueTy::Scalar(value_ty) => {
-                let val_mod = value_ty.module();
+                let val_mod = value_ty.module(self.enum_type);
                 let ve = quote!(::prost::encoding::#val_mod::encode);
                 let vl = quote!(::prost::encoding::#val_mod::encoded_len);
                 quote! {
@@ -179,11 +185,11 @@ impl Field {
     /// Returns an expression which evaluates to the result of merging a decoded key value pair
     /// into the map.
     pub fn merge(&self, ident: TokenStream) -> TokenStream {
-        let key_mod = self.key_ty.module();
+        let key_mod = self.key_ty.module(None);
         let km = quote!(::prost::encoding::#key_mod::merge);
         let module = self.map_ty.module();
         match &self.value_ty {
-            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
+            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) if self.enum_type.is_none() => {
                 let default = quote!(#ty::default() as i32);
                 quote! {
                     ::prost::encoding::#module::merge_with_default(
@@ -197,7 +203,7 @@ impl Field {
                 }
             }
             ValueTy::Scalar(value_ty) => {
-                let val_mod = value_ty.module();
+                let val_mod = value_ty.module(self.enum_type);
                 let vm = quote!(::prost::encoding::#val_mod::merge);
                 quote!(::prost::encoding::#module::merge(#km, #vm, &mut #ident, buf, ctx))
             }
@@ -216,11 +222,11 @@ impl Field {
     /// Returns an expression which evaluates to the encoded length of the map.
     pub fn encoded_len(&self, ident: TokenStream) -> TokenStream {
         let tag = self.tag;
-        let key_mod = self.key_ty.module();
+        let key_mod = self.key_ty.module(None);
         let kl = quote!(::prost::encoding::#key_mod::encoded_len);
         let module = self.map_ty.module();
         match &self.value_ty {
-            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) => {
+            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) if self.enum_type.is_none() => {
                 let default = quote!(#ty::default() as i32);
                 quote! {
                     ::prost::encoding::#module::encoded_len_with_default(
@@ -233,7 +239,7 @@ impl Field {
                 }
             }
             ValueTy::Scalar(value_ty) => {
-                let val_mod = value_ty.module();
+                let val_mod = value_ty.module(self.enum_type);
                 let vl = quote!(::prost::encoding::#val_mod::encoded_len);
                 quote!(::prost::encoding::#module::encoded_len(#kl, #vl, #tag, &#ident))
             }
@@ -254,42 +260,43 @@ impl Field {
 
     /// Returns methods to embed in the message.
     pub fn methods(&self, ident: &TokenStream) -> Option<TokenStream> {
-        if let ValueTy::Scalar(scalar::Ty::Enumeration(ty)) = &self.value_ty {
-            let key_ty = self.key_ty.rust_type();
-            let key_ref_ty = self.key_ty.rust_ref_type();
+        match &self.value_ty {
+            ValueTy::Scalar(scalar::Ty::Enumeration(ty)) if self.enum_type.is_none() => {
+                let key_ty = self.key_ty.owned_type(None);
+                let key_ref_ty = self.key_ty.ref_type();
 
-            let get = Ident::new(&format!("get_{}", ident), Span::call_site());
-            let insert = Ident::new(&format!("insert_{}", ident), Span::call_site());
-            let take_ref = if self.key_ty.is_numeric() {
-                quote!(&)
-            } else {
-                quote!()
-            };
+                let get = Ident::new(&format!("get_{}", ident), Span::call_site());
+                let insert = Ident::new(&format!("insert_{}", ident), Span::call_site());
+                let take_ref = if self.key_ty.is_numeric() {
+                    quote!(&)
+                } else {
+                    quote!()
+                };
 
-            let get_doc = format!(
-                "Returns the enum value for the corresponding key in `{}`, \
+                let get_doc = format!(
+                    "Returns the enum value for the corresponding key in `{}`, \
                  or `None` if the entry does not exist or it is not a valid enum value.",
-                ident,
-            );
-            let insert_doc = format!("Inserts a key value pair into `{}`.", ident);
-            Some(quote! {
-                #[doc=#get_doc]
-                pub fn #get(&self, key: #key_ref_ty) -> ::core::option::Option<#ty> {
-                    self.#ident.get(#take_ref key).cloned().and_then(|x| {
-                        let result: ::core::result::Result<#ty, _> = ::core::convert::TryFrom::try_from(x);
-                        result.ok()
-                    })
-                }
-                #[doc=#insert_doc]
-                pub fn #insert(&mut self, key: #key_ty, value: #ty) -> ::core::option::Option<#ty> {
-                    self.#ident.insert(key, value as i32).and_then(|x| {
-                        let result: ::core::result::Result<#ty, _> = ::core::convert::TryFrom::try_from(x);
-                        result.ok()
-                    })
-                }
-            })
-        } else {
-            None
+                    ident,
+                );
+                let insert_doc = format!("Inserts a key value pair into `{}`.", ident);
+                Some(quote! {
+                    #[doc=#get_doc]
+                    pub fn #get(&self, key: #key_ref_ty) -> ::core::option::Option<#ty> {
+                        self.#ident.get(#take_ref key).cloned().and_then(|x| {
+                            let result: ::core::result::Result<#ty, _> = ::core::convert::TryFrom::try_from(x);
+                            result.ok()
+                        })
+                    }
+                    #[doc=#insert_doc]
+                    pub fn #insert(&mut self, key: #key_ty, value: #ty) -> ::core::option::Option<#ty> {
+                        self.#ident.insert(key, value as i32).and_then(|x| {
+                            let result: ::core::result::Result<#ty, _> = ::core::convert::TryFrom::try_from(x);
+                            result.ok()
+                        })
+                    }
+                })
+            }
+            _ => None,
         }
     }
 
@@ -304,9 +311,9 @@ impl Field {
         };
 
         // A fake field for generating the debug wrapper
-        let key_wrapper = fake_scalar(self.key_ty.clone()).debug(quote!(KeyWrapper));
-        let key = self.key_ty.rust_type();
-        let value_wrapper = self.value_ty.debug();
+        let key_wrapper = fake_scalar(self.key_ty.clone(), None).debug(quote!(KeyWrapper));
+        let key = self.key_ty.owned_type(None);
+        let value_wrapper = self.value_ty.debug(self.enum_type);
         let libname = self.map_ty.lib();
         let fmt = quote! {
             fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
@@ -332,7 +339,7 @@ impl Field {
                     };
                 }
 
-                let value = ty.rust_type();
+                let value = ty.owned_type(self.enum_type);
                 quote! {
                     struct #wrapper_name<'a>(&'a ::#libname::collections::#type_name<#key, #value>);
                     impl<'a> ::core::fmt::Debug for #wrapper_name<'a> {
@@ -392,12 +399,14 @@ impl ValueTy {
 
     /// Returns a newtype wrapper around the ValueTy for nicer debug.
     ///
+    /// The generated implementation depends on the `enum_type` feature selection.
     /// If the contained value is enumeration, it tries to convert it to the variant. If not, it
     /// just forwards the implementation.
-    fn debug(&self) -> TokenStream {
+    fn debug(&self, enum_type: Option<EnumType>) -> TokenStream {
         match self {
-            ValueTy::Scalar(ty) => fake_scalar(ty.clone()).debug(quote!(ValueWrapper)),
+            ValueTy::Scalar(ty) => fake_scalar(ty.clone(), enum_type).debug(quote!(ValueWrapper)),
             ValueTy::Message => quote!(
+                #[allow(non_snake_case)]
                 fn ValueWrapper<T>(v: T) -> T {
                     v
                 }

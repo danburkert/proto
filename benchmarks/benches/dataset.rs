@@ -37,7 +37,7 @@ fn benchmark_dataset<M>(criterion: &mut Criterion, name: &str, dataset: &'static
 where
     M: prost::Message + Default + 'static,
 {
-    let mut group = criterion.benchmark_group(&format!("dataset/{}", name));
+    let mut group = criterion.benchmark_group(format!("dataset/{}", name));
 
     group.bench_function("merge", move |b| {
         let dataset = load_dataset(dataset).unwrap();

@@ -134,8 +134,8 @@ impl From<EncodeError> for std::io::Error {
 
 /// An error indicating that an unknown enumeration value was encountered.
 ///
-/// The Protobuf spec mandates that enumeration value sets are ‘open’, so this
-/// error's value represents an integer value unrecognized by the
+/// When the Protobuf spec mandates that enumeration value sets are ‘open’,
+/// this error's value represents an integer value not known from the
 /// presently used enum definition.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct UnknownEnumValue(pub i32);

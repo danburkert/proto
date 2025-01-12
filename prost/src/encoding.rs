@@ -519,6 +519,270 @@ fixed_width!(
     get_i64_le
 );
 
+pub mod open_enum {
+    use super::*;
+    use crate::OpenEnum;
+
+    pub fn encode<T, B>(tag: u32, value: &OpenEnum<T>, buf: &mut B)
+    where
+        T: Clone + Into<i32>,
+        B: BufMut,
+    {
+        int32::encode(tag, &value.to_raw(), buf)
+    }
+
+    pub fn merge<T, B>(
+        wire_type: WireType,
+        value: &mut OpenEnum<T>,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        i32: TryInto<T>,
+        B: Buf,
+    {
+        let mut raw = 0i32;
+        int32::merge(wire_type, &mut raw, buf, ctx)?;
+        *value = OpenEnum::from_raw(raw);
+        Ok(())
+    }
+
+    pub fn encode_repeated<T, B>(tag: u32, values: &[OpenEnum<T>], buf: &mut B)
+    where
+        T: Clone + Into<i32>,
+        B: BufMut,
+    {
+        for value in values {
+            encode(tag, value, buf);
+        }
+    }
+
+    pub fn encode_packed<T, B>(tag: u32, values: &[OpenEnum<T>], buf: &mut B)
+    where
+        T: Clone + Into<i32>,
+        B: BufMut,
+    {
+        if values.is_empty() {
+            return;
+        }
+
+        encode_key(tag, WireType::LengthDelimited, buf);
+        let len: usize = values
+            .iter()
+            .map(|value| encoded_len_varint(value.to_raw() as u64))
+            .sum();
+        encode_varint(len as u64, buf);
+
+        for value in values {
+            encode_varint(value.to_raw() as u64, buf);
+        }
+    }
+
+    pub fn merge_repeated<T, B>(
+        wire_type: WireType,
+        values: &mut Vec<OpenEnum<T>>,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        T: Default,
+        i32: TryInto<T>,
+        B: Buf,
+    {
+        if wire_type == WireType::LengthDelimited {
+            // Packed.
+            merge_loop(values, buf, ctx, |values, buf, ctx| {
+                let mut value = Default::default();
+                merge(WireType::Varint, &mut value, buf, ctx)?;
+                values.push(value);
+                Ok(())
+            })
+        } else {
+            // Unpacked.
+            let mut value = Default::default();
+            merge(wire_type, &mut value, buf, ctx)?;
+            values.push(value);
+            Ok(())
+        }
+    }
+
+    pub fn encoded_len<T>(tag: u32, value: &OpenEnum<T>) -> usize
+    where
+        T: Clone + Into<i32>,
+    {
+        int32::encoded_len(tag, &value.to_raw())
+    }
+
+    pub fn encoded_len_repeated<T>(tag: u32, values: &[OpenEnum<T>]) -> usize
+    where
+        T: Clone + Into<i32>,
+    {
+        key_len(tag) * values.len()
+            + values
+                .iter()
+                .map(|value| encoded_len_varint(value.to_raw() as u64))
+                .sum::<usize>()
+    }
+
+    pub fn encoded_len_packed<T>(tag: u32, values: &[OpenEnum<T>]) -> usize
+    where
+        T: Clone + Into<i32>,
+    {
+        if values.is_empty() {
+            0
+        } else {
+            let len = values
+                .iter()
+                .map(|value| encoded_len_varint(value.to_raw() as u64))
+                .sum::<usize>();
+            key_len(tag) + encoded_len_varint(len as u64) + len
+        }
+    }
+}
+
+pub mod closed_enum {
+    use super::*;
+
+    pub fn encode<T, B>(tag: u32, value: &T, buf: &mut B)
+    where
+        T: Clone + Into<i32>,
+        B: BufMut,
+    {
+        int32::encode(tag, &value.clone().into(), buf)
+    }
+
+    pub fn merge<T, B>(
+        wire_type: WireType,
+        value: &mut T,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        i32: TryInto<T>,
+        B: Buf,
+    {
+        // If the value is not a known enum variant, it is not merged.
+        merge_known(wire_type, value, buf, ctx).map(|_| ())
+    }
+
+    fn merge_known<T, B>(
+        wire_type: WireType,
+        value: &mut T,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<bool, DecodeError>
+    where
+        i32: TryInto<T>,
+        B: Buf,
+    {
+        let mut raw = 0i32;
+        int32::merge(wire_type, &mut raw, buf, ctx)?;
+        match raw.try_into() {
+            Ok(new_value) => {
+                *value = new_value;
+                Ok(true)
+            }
+            Err(_) => Ok(false),
+        }
+    }
+
+    pub fn encode_repeated<T, B>(tag: u32, values: &[T], buf: &mut B)
+    where
+        T: Clone + Into<i32>,
+        B: BufMut,
+    {
+        for value in values {
+            encode(tag, value, buf);
+        }
+    }
+
+    pub fn encode_packed<T, B>(tag: u32, values: &[T], buf: &mut B)
+    where
+        T: Clone + Into<i32>,
+        B: BufMut,
+    {
+        if values.is_empty() {
+            return;
+        }
+
+        encode_key(tag, WireType::LengthDelimited, buf);
+        let len: usize = values
+            .iter()
+            .map(|value| encoded_len_varint(value.clone().into() as u64))
+            .sum();
+        encode_varint(len as u64, buf);
+
+        for value in values {
+            encode_varint(value.clone().into() as u64, buf);
+        }
+    }
+
+    pub fn merge_repeated<T, B>(
+        wire_type: WireType,
+        values: &mut Vec<T>,
+        buf: &mut B,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>
+    where
+        T: Default,
+        i32: TryInto<T>,
+        B: Buf,
+    {
+        // By the specification on closed enum behavior, only the known values
+        // are parsed into the field.
+        if wire_type == WireType::LengthDelimited {
+            // Packed.
+            merge_loop(values, buf, ctx, |values, buf, ctx| {
+                let mut value = Default::default();
+                if merge_known(WireType::Varint, &mut value, buf, ctx)? {
+                    values.push(value);
+                }
+                Ok(())
+            })
+        } else {
+            // Unpacked.
+            let mut value = Default::default();
+            if merge_known(wire_type, &mut value, buf, ctx)? {
+                values.push(value);
+            }
+            Ok(())
+        }
+    }
+
+    pub fn encoded_len<T>(tag: u32, value: &T) -> usize
+    where
+        T: Clone + Into<i32>,
+    {
+        int32::encoded_len(tag, &value.clone().into())
+    }
+
+    pub fn encoded_len_repeated<T>(tag: u32, values: &[T]) -> usize
+    where
+        T: Clone + Into<i32>,
+    {
+        key_len(tag) * values.len()
+            + values
+                .iter()
+                .map(|value| encoded_len_varint(value.clone().into() as u64))
+                .sum::<usize>()
+    }
+
+    pub fn encoded_len_packed<T>(tag: u32, values: &[T]) -> usize
+    where
+        T: Clone + Into<i32>,
+    {
+        if values.is_empty() {
+            0
+        } else {
+            let len = values
+                .iter()
+                .map(|value| encoded_len_varint(value.clone().into() as u64))
+                .sum::<usize>();
+            key_len(tag) + encoded_len_varint(len as u64) + len
+        }
+    }
+}
+
 /// Macro which emits encoding functions for a length-delimited type.
 macro_rules! length_delimited {
     ($ty:ty) => {

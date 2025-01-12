@@ -12,6 +12,7 @@ pub use bytes;
 mod error;
 mod message;
 mod name;
+mod open_enum;
 mod types;
 
 #[doc(hidden)]
@@ -23,6 +24,7 @@ pub use crate::encoding::length_delimiter::{
 pub use crate::error::{DecodeError, EncodeError, UnknownEnumValue};
 pub use crate::message::Message;
 pub use crate::name::Name;
+pub use crate::open_enum::OpenEnum;
 
 // See `encoding::DecodeContext` for more info.
 // 100 is the default recursion limit in the C++ implementation.

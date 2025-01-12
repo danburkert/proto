@@ -11,7 +11,7 @@ use anyhow::{bail, Error};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::punctuated::Punctuated;
-use syn::{Attribute, Expr, ExprLit, Lit, LitBool, LitInt, Meta, MetaNameValue, Token};
+use syn::{Attribute, Expr, ExprLit, Ident, Lit, LitBool, LitInt, Meta, MetaNameValue, Token};
 
 #[derive(Clone)]
 pub enum Field {
@@ -219,6 +219,63 @@ impl fmt::Debug for Label {
 }
 
 impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EnumType {
+    Closed,
+    Open,
+}
+
+impl EnumType {
+    fn as_str(self) -> &'static str {
+        match self {
+            EnumType::Closed => "closed",
+            EnumType::Open => "open",
+        }
+    }
+
+    /// Parses a meta attribute into the enum_type feature value.
+    /// If the attribute name does not match "enum_type", `None` is returned.
+    fn from_attr(attr: &Meta) -> Result<Option<EnumType>, Error> {
+        if !attr.path().is_ident("enum_type") {
+            return Ok(None);
+        }
+        match attr {
+            Meta::NameValue(MetaNameValue {
+                value: Expr::Lit(ExprLit { lit, .. }),
+                ..
+            }) => {
+                if let Lit::Str(lit) = lit {
+                    match lit.value().as_str() {
+                        "open" => return Ok(Some(EnumType::Open)),
+                        "closed" => return Ok(Some(EnumType::Closed)),
+                        _ => {}
+                    }
+                }
+                bail!("invalid value of enum_type attribute: {}", quote!(#lit));
+            }
+            Meta::List(meta_list) => {
+                let ident = meta_list.parse_args::<Ident>()?;
+                if ident == "open" {
+                    Ok(Some(EnumType::Open))
+                } else if ident == "closed" {
+                    Ok(Some(EnumType::Closed))
+                } else {
+                    bail!("invalid content of enum_type attribute: {}", ident);
+                }
+            }
+            _ => {
+                bail!("invalid enum_type attribute: {}", quote!(#attr));
+            }
+        }
+    }
+}
+
+impl fmt::Debug for EnumType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
