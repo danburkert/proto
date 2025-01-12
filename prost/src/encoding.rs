@@ -4,6 +4,7 @@
 
 #![allow(clippy::implicit_hasher, clippy::ptr_arg)]
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
@@ -630,12 +631,96 @@ pub mod string {
     }
 }
 
+pub mod cow_str {
+    use super::*;
+
+    pub fn encode(tag: u32, value: &Cow<'_, str>, buf: &mut impl BufMut) {
+        encode_key(tag, WireType::LengthDelimited, buf);
+        encode_varint(value.as_ref().len() as u64, buf);
+        buf.put_slice(value.as_ref().as_bytes());
+    }
+
+    pub fn merge(
+        wire_type: WireType,
+        value: &mut Cow<'_, str>,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
+        // ## Unsafety
+        //
+        // `string::merge` reuses `bytes::merge`, with an additional check of utf-8
+        // well-formedness. If the utf-8 is not well-formed, or if any other error occurs, then the
+        // string is cleared, so as to avoid leaking a string field with invalid data.
+        //
+        // This implementation uses the unsafe `String::as_mut_vec` method instead of the safe
+        // alternative of temporarily swapping an empty `String` into the field, because it results
+        // in up to 10% better performance on the protobuf message decoding benchmarks.
+        //
+        // It's required when using `String::as_mut_vec` that invalid utf-8 data not be leaked into
+        // the backing `String`. To enforce this, even in the event of a panic in `bytes::merge` or
+        // in the buf implementation, a drop guard is used.
+        unsafe {
+            struct DropGuard<'a>(&'a mut Vec<u8>);
+            impl Drop for DropGuard<'_> {
+                #[inline]
+                fn drop(&mut self) {
+                    self.0.clear();
+                }
+            }
+
+            *value = Cow::Owned(String::default());
+            let drop_guard = DropGuard(value.to_mut().as_mut_vec());
+            bytes::merge_one_copy(wire_type, drop_guard.0, buf, ctx)?;
+            match str::from_utf8(drop_guard.0) {
+                Ok(_) => {
+                    // Success; do not clear the bytes.
+                    mem::forget(drop_guard);
+                    Ok(())
+                }
+                Err(_) => Err(DecodeError::new(
+                    "invalid string value: data is not UTF-8 encoded",
+                )),
+            }
+        }
+    }
+
+    encode_repeated!(Cow<'_, str>);
+
+    //length_delimited!(String);
+    pub fn merge_repeated(
+        wire_type: WireType,
+        values: &mut Vec<Cow<'_, str>>,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
+        let mut value = Default::default();
+        merge(wire_type, &mut value, buf, ctx)?;
+        values.push(value);
+        Ok(())
+    }
+
+    #[inline]
+    pub fn encoded_len(tag: u32, value: &Cow<'_, str>) -> usize {
+        key_len(tag) + encoded_len_varint(value.as_ref().len() as u64) + value.len()
+    }
+
+    #[inline]
+    pub fn encoded_len_repeated(tag: u32, values: &[Cow<'_, str>]) -> usize {
+        key_len(tag) * values.len()
+            + values
+                .iter()
+                .map(|value| encoded_len_varint(value.as_ref().len() as u64) + value.as_ref().len())
+                .sum::<usize>()
+    }
+}
+
 pub trait BytesAdapter: sealed::BytesAdapter {}
 
 mod sealed {
     use super::{Buf, BufMut};
 
-    pub trait BytesAdapter: Default + Sized + 'static {
+    pub trait BytesAdapter: Default + Sized {
         fn len(&self) -> usize;
 
         /// Replace contents of this buffer with the contents of another buffer.
@@ -681,6 +766,26 @@ impl sealed::BytesAdapter for Vec<u8> {
 
     fn append_to(&self, buf: &mut impl BufMut) {
         buf.put(self.as_slice())
+    }
+}
+
+impl<'a> BytesAdapter for Cow<'a, [u8]> {}
+
+impl<'a> sealed::BytesAdapter for Cow<'a, [u8]> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+
+    fn replace_with(&mut self, buf: impl Buf) {
+        let mut v = Vec::new();
+        v.clear();
+        v.reserve(buf.remaining());
+        v.put(buf);
+        *self = Cow::Owned(v);
+    }
+
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put(self.as_ref())
     }
 }
 
@@ -779,6 +884,10 @@ pub mod bytes {
             }
         }
     }
+}
+
+pub mod cow_bytes {
+    pub use super::bytes::*;
 }
 
 pub mod message {

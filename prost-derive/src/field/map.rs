@@ -367,6 +367,7 @@ fn key_ty_from_str(s: &str) -> Result<scalar::Ty, Error> {
         | scalar::Ty::Sfixed32
         | scalar::Ty::Sfixed64
         | scalar::Ty::Bool
+        | scalar::Ty::CowStr
         | scalar::Ty::String => Ok(ty),
         _ => bail!("invalid map key type: {}", s),
     }

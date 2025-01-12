@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use petgraph::algo::has_path_connecting;
 use petgraph::graph::NodeIndex;
@@ -19,18 +19,21 @@ pub struct MessageGraph {
     graph: Graph<String, ()>,
     messages: HashMap<String, DescriptorProto>,
     boxed: PathMap<()>,
+    cowed: PathMap<()>,
 }
 
 impl MessageGraph {
     pub(crate) fn new<'a>(
         files: impl Iterator<Item = &'a FileDescriptorProto>,
         boxed: PathMap<()>,
+        cowed: PathMap<()>,
     ) -> MessageGraph {
         let mut msg_graph = MessageGraph {
             index: HashMap::new(),
             graph: Graph::new(),
             messages: HashMap::new(),
             boxed,
+            cowed,
         };
 
         for file in files {
@@ -152,5 +155,51 @@ impl MessageGraph {
                     | Type::Enum
             )
         }
+    }
+
+    fn message_has_lifetime_internal(
+        &self,
+        fq_message_name: &str,
+        visited: &mut HashSet<String>,
+    ) -> bool {
+        visited.insert(fq_message_name.to_string());
+        assert_eq!(".", &fq_message_name[..1]);
+        self.get_message(fq_message_name)
+            .unwrap()
+            .field
+            .iter()
+            .any(|field| self.field_has_lifetime_internal(fq_message_name, field, visited))
+    }
+
+    pub fn message_has_lifetime(&self, fq_message_name: &str) -> bool {
+        let mut visited = Default::default();
+        self.message_has_lifetime_internal(fq_message_name, &mut visited)
+    }
+
+    fn field_has_lifetime_internal(
+        &self,
+        fq_message_name: &str,
+        field: &FieldDescriptorProto,
+        visited: &mut HashSet<String>,
+    ) -> bool {
+        assert_eq!(".", &fq_message_name[..1]);
+
+        if field.r#type() == Type::Message {
+            if visited.contains(field.type_name()) {
+                return false;
+            }
+            self.message_has_lifetime_internal(field.type_name(), visited)
+        } else {
+            matches!(field.r#type(), Type::Bytes | Type::String)
+                && self
+                    .cowed
+                    .get_first_field(fq_message_name, field.name())
+                    .is_some()
+        }
+    }
+
+    pub fn field_has_lifetime(&self, fq_message_name: &str, field: &FieldDescriptorProto) -> bool {
+        let mut visited = Default::default();
+        self.field_has_lifetime_internal(fq_message_name, field, &mut visited)
     }
 }

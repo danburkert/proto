@@ -56,6 +56,10 @@ mod type_names;
 #[cfg(test)]
 mod boxed_field;
 
+#[cfg(feature = "std")]
+#[cfg(test)]
+mod cowed_field;
+
 #[cfg(test)]
 mod custom_debug;
 

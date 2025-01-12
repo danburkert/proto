@@ -1,0 +1,38 @@
+syntax = "proto3";
+package cowed_field;
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+
+message Bar {
+  string myBarStr = 1;
+  string myBarCowStr = 2;
+  bytes myBarBytes = 3;
+  bytes myBarVec = 4;
+  bytes myBarCowBytes = 5;
+  map<uint64, string> myNormalMap = 6;
+  map<uint64, string> myNormalCowMap = 7;
+  map<uint64, string> myBtreeMap = 8;
+  map<uint64, string> myBtreeCowMap = 9;
+}
+
+message Foo {
+    string myStr   = 1;
+    uint32 myInt   = 2;
+    repeated string myRepeat = 3;
+    map<uint64, string> myFirstMap = 4;
+    map<string, uint64> mySecondMap = 5;
+    map<string, string> myThirdMap = 6;
+    optional string myOptStr = 7;
+    google.protobuf.Timestamp before     = 8;
+    bytes myBytes = 9;
+    google.protobuf.StringValue googleStr     = 10;
+    map<uint32, bytes> myBytesMap = 11;
+    bytes myVecBytes = 12;
+    oneof extraDetails {
+      uint32 oneOfInt = 100;
+      string oneOfStr = 101;
+      bytes oneOfBytes = 102;
+      Bar oneOfBar = 103;
+    };
+}

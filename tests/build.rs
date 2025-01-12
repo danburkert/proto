@@ -173,6 +173,20 @@ fn main() {
         .compile_protos(&[src.join("boxed_field.proto")], includes)
         .unwrap();
 
+    prost_build::Config::new()
+        .cowed(".cowed_field.Foo")
+        .bytes([".cowed_field.Bar.myBarBytes"])
+        .cowed(".cowed_field.Bar.myBarCowBytes")
+        .cowed(".cowed_field.Bar.myBarCowStr")
+        .cowed(".cowed_field.Bar.myNormalCowMap")
+        .cowed(".cowed_field.Bar.myBtreeCowMap")
+        .btree_map([
+            ".cowed_field.Bar.myBtreeMap",
+            ".cowed_field.Bar.myBtreeCowMap",
+        ])
+        .compile_protos(&[src.join("cowed_field.proto")], includes)
+        .unwrap();
+
     // Check that attempting to compile a .proto without a package declaration does not result in an error.
     config
         .compile_protos(&[src.join("no_package.proto")], includes)
