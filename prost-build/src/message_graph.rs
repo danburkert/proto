@@ -9,7 +9,7 @@ use prost_types::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
 };
 
-use crate::path::PathMap;
+use crate::{fully_qualified_name::FullyQualifiedName, path::PathMap};
 
 /// `MessageGraph` builds a graph of messages whose edges correspond to nesting.
 /// The goal is to recognize when message types are recursively nested, so
@@ -101,9 +101,8 @@ impl MessageGraph {
     }
 
     /// Returns `true` if this message can automatically derive Copy trait.
-    pub fn can_message_derive_copy(&self, fq_message_name: &str) -> bool {
-        assert_eq!(".", &fq_message_name[..1]);
-        self.get_message(fq_message_name)
+    pub fn can_message_derive_copy(&self, fq_message_name: &FullyQualifiedName) -> bool {
+        self.get_message(fq_message_name.as_ref())
             .unwrap()
             .field
             .iter()
@@ -113,17 +112,15 @@ impl MessageGraph {
     /// Returns `true` if the type of this field allows deriving the Copy trait.
     pub fn can_field_derive_copy(
         &self,
-        fq_message_name: &str,
+        fq_message_name: &FullyQualifiedName,
         field: &FieldDescriptorProto,
     ) -> bool {
-        assert_eq!(".", &fq_message_name[..1]);
-
         // repeated field cannot derive Copy
         if field.label() == Label::Repeated {
             false
         } else if field.r#type() == Type::Message {
             // nested and boxed messages cannot derive Copy
-            if self.is_nested(field.type_name(), fq_message_name)
+            if self.is_nested(field.type_name(), fq_message_name.as_ref())
                 || self
                     .boxed
                     .get_first_field(fq_message_name, field.name())
@@ -131,7 +128,7 @@ impl MessageGraph {
             {
                 false
             } else {
-                self.can_message_derive_copy(field.type_name())
+                self.can_message_derive_copy(&FullyQualifiedName::from_type_name(field.type_name()))
             }
         } else {
             matches!(

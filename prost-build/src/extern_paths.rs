@@ -2,7 +2,10 @@ use std::collections::{hash_map, HashMap};
 
 use itertools::Itertools;
 
-use crate::ident::{to_snake, to_upper_camel};
+use crate::{
+    fully_qualified_name::FullyQualifiedName,
+    ident::{to_snake, to_upper_camel},
+};
 
 fn validate_proto_path(path: &str) -> Result<(), String> {
     if path.chars().next().map(|c| c != '.').unwrap_or(true) {
@@ -19,52 +22,54 @@ fn validate_proto_path(path: &str) -> Result<(), String> {
 
 #[derive(Debug)]
 pub struct ExternPaths {
+    // IMPROVEMENT: store as FullyQualifiedName and syn::Path
     extern_paths: HashMap<String, String>,
 }
 
 impl ExternPaths {
-    pub fn new(paths: &[(String, String)], prost_types: bool) -> Result<ExternPaths, String> {
+    pub fn new<'a>(
+        paths: impl IntoIterator<Item = (&'a str, &'a str)> + 'a,
+        prost_types: bool,
+    ) -> Result<ExternPaths, String> {
         let mut extern_paths = ExternPaths {
             extern_paths: HashMap::new(),
         };
 
         for (proto_path, rust_path) in paths {
-            extern_paths.insert(proto_path.clone(), rust_path.clone())?;
+            extern_paths.insert(proto_path, rust_path)?;
         }
 
         if prost_types {
-            extern_paths.insert(".google.protobuf".to_string(), "::prost_types".to_string())?;
-            extern_paths.insert(".google.protobuf.BoolValue".to_string(), "bool".to_string())?;
+            extern_paths.insert(".google.protobuf", "::prost_types")?;
+            extern_paths.insert(".google.protobuf.BoolValue", "bool")?;
             extern_paths.insert(
-                ".google.protobuf.BytesValue".to_string(),
-                "::prost::alloc::vec::Vec<u8>".to_string(),
+                ".google.protobuf.BytesValue",
+                "::prost::alloc::vec::Vec<u8>",
             )?;
+            extern_paths.insert(".google.protobuf.DoubleValue", "f64")?;
+            extern_paths.insert(".google.protobuf.Empty", "()")?;
+            extern_paths.insert(".google.protobuf.FloatValue", "f32")?;
+            extern_paths.insert(".google.protobuf.Int32Value", "i32")?;
+            extern_paths.insert(".google.protobuf.Int64Value", "i64")?;
             extern_paths.insert(
-                ".google.protobuf.DoubleValue".to_string(),
-                "f64".to_string(),
+                ".google.protobuf.StringValue",
+                "::prost::alloc::string::String",
             )?;
-            extern_paths.insert(".google.protobuf.Empty".to_string(), "()".to_string())?;
-            extern_paths.insert(".google.protobuf.FloatValue".to_string(), "f32".to_string())?;
-            extern_paths.insert(".google.protobuf.Int32Value".to_string(), "i32".to_string())?;
-            extern_paths.insert(".google.protobuf.Int64Value".to_string(), "i64".to_string())?;
-            extern_paths.insert(
-                ".google.protobuf.StringValue".to_string(),
-                "::prost::alloc::string::String".to_string(),
-            )?;
-            extern_paths.insert(
-                ".google.protobuf.UInt32Value".to_string(),
-                "u32".to_string(),
-            )?;
-            extern_paths.insert(
-                ".google.protobuf.UInt64Value".to_string(),
-                "u64".to_string(),
-            )?;
+            extern_paths.insert(".google.protobuf.UInt32Value", "u32")?;
+            extern_paths.insert(".google.protobuf.UInt64Value", "u64")?;
         }
 
         Ok(extern_paths)
     }
 
-    fn insert(&mut self, proto_path: String, rust_path: String) -> Result<(), String> {
+    fn insert(
+        &mut self,
+        proto_path: impl Into<String>,
+        rust_path: impl Into<String>,
+    ) -> Result<(), String> {
+        let proto_path = proto_path.into();
+        let rust_path = rust_path.into();
+
         validate_proto_path(&proto_path)?;
         match self.extern_paths.entry(proto_path) {
             hash_map::Entry::Occupied(occupied) => {
@@ -78,10 +83,8 @@ impl ExternPaths {
         Ok(())
     }
 
-    pub fn resolve_ident(&self, pb_ident: &str) -> Option<String> {
-        // protoc should always give fully qualified identifiers.
-        assert_eq!(".", &pb_ident[..1]);
-
+    pub fn resolve_ident(&self, pb_ident: &FullyQualifiedName) -> Option<String> {
+        let pb_ident = pb_ident.as_ref();
         if let Some(rust_path) = self.extern_paths.get(pb_ident) {
             return Some(rust_path.clone());
         }
@@ -124,19 +127,22 @@ mod tests {
     #[test]
     fn test_extern_paths() {
         let paths = ExternPaths::new(
-            &[
-                (".foo".to_string(), "::foo1".to_string()),
-                (".foo.bar".to_string(), "::foo2".to_string()),
-                (".foo.baz".to_string(), "::foo3".to_string()),
-                (".foo.Fuzz".to_string(), "::foo4::Fuzz".to_string()),
-                (".a.b.c.d.e.f".to_string(), "::abc::def".to_string()),
+            [
+                (".foo", "::foo1"),
+                (".foo.bar", "::foo2"),
+                (".foo.baz", "::foo3"),
+                (".foo.Fuzz", "::foo4::Fuzz"),
+                (".a.b.c.d.e.f", "::abc::def"),
             ],
             false,
         )
         .unwrap();
 
         let case = |proto_ident: &str, resolved_ident: &str| {
-            assert_eq!(paths.resolve_ident(proto_ident).unwrap(), resolved_ident);
+            assert_eq!(
+                paths.resolve_ident(&proto_ident.into()).unwrap(),
+                resolved_ident
+            );
         };
 
         case(".foo", "::foo1");
@@ -150,17 +156,20 @@ mod tests {
         case(".a.b.c.d.e.f", "::abc::def");
         case(".a.b.c.d.e.f.g.FooBar.Baz", "::abc::def::g::foo_bar::Baz");
 
-        assert!(paths.resolve_ident(".a").is_none());
-        assert!(paths.resolve_ident(".a.b").is_none());
-        assert!(paths.resolve_ident(".a.c").is_none());
+        assert!(paths.resolve_ident(&".a".into()).is_none());
+        assert!(paths.resolve_ident(&".a.b".into()).is_none());
+        assert!(paths.resolve_ident(&".a.c".into()).is_none());
     }
 
     #[test]
     fn test_well_known_types() {
-        let paths = ExternPaths::new(&[], true).unwrap();
+        let paths = ExternPaths::new([], true).unwrap();
 
         let case = |proto_ident: &str, resolved_ident: &str| {
-            assert_eq!(paths.resolve_ident(proto_ident).unwrap(), resolved_ident);
+            assert_eq!(
+                paths.resolve_ident(&proto_ident.into()).unwrap(),
+                resolved_ident
+            );
         };
 
         case(".google.protobuf.Value", "::prost_types::Value");
@@ -170,8 +179,8 @@ mod tests {
 
     #[test]
     fn test_error_fully_qualified() {
-        let paths = [("foo".to_string(), "bar".to_string())];
-        let err = ExternPaths::new(&paths, false).unwrap_err();
+        let paths = [("foo", "bar")];
+        let err = ExternPaths::new(paths, false).unwrap_err();
         assert_eq!(
             err.to_string(),
             "Protobuf paths must be fully qualified (begin with a leading '.'): foo"
@@ -180,8 +189,8 @@ mod tests {
 
     #[test]
     fn test_error_invalid_path() {
-        let paths = [(".foo.".to_string(), "bar".to_string())];
-        let err = ExternPaths::new(&paths, false).unwrap_err();
+        let paths = [(".foo.", "bar")];
+        let err = ExternPaths::new(paths, false).unwrap_err();
         assert_eq!(
             err.to_string(),
             "invalid fully-qualified Protobuf path: .foo."
@@ -190,11 +199,8 @@ mod tests {
 
     #[test]
     fn test_error_duplicate() {
-        let paths = [
-            (".foo".to_string(), "bar".to_string()),
-            (".foo".to_string(), "bar".to_string()),
-        ];
-        let err = ExternPaths::new(&paths, false).unwrap_err();
+        let paths = [(".foo", "bar"), (".foo", "bar")];
+        let err = ExternPaths::new(paths, false).unwrap_err();
         assert_eq!(err.to_string(), "duplicate extern Protobuf path: .foo")
     }
 }

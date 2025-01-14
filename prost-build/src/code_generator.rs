@@ -16,6 +16,7 @@ use prost_types::{
 
 use crate::ast::{Comments, Method, Service};
 use crate::extern_paths::ExternPaths;
+use crate::fully_qualified_name::FullyQualifiedName;
 use crate::ident::{strip_enum_prefix, to_snake, to_upper_camel};
 use crate::message_graph::MessageGraph;
 use crate::Config;
@@ -159,7 +160,8 @@ impl CodeGenerator<'_> {
         debug!("  message: {:?}", message.name());
 
         let message_name = message.name().to_string();
-        let fq_message_name = self.fq_name(&message_name);
+        let fq_message_name =
+            FullyQualifiedName::new(&self.package, &self.type_path, &message_name);
 
         // Skip external types.
         if self.extern_paths.resolve_ident(&fq_message_name).is_some() {
@@ -170,7 +172,7 @@ impl CodeGenerator<'_> {
         // of the map field entry types. The path index of the nested message types is preserved so
         // that comments can be retrieved.
         type NestedTypes = Vec<(DescriptorProto, usize)>;
-        type MapTypes = HashMap<String, (FieldDescriptorProto, FieldDescriptorProto)>;
+        type MapTypes = HashMap<FullyQualifiedName, (FieldDescriptorProto, FieldDescriptorProto)>;
         let (nested_types, map_types): (NestedTypes, MapTypes) = message
             .nested_type
             .into_iter()
@@ -187,7 +189,7 @@ impl CodeGenerator<'_> {
                     assert_eq!("key", key.name());
                     assert_eq!("value", value.name());
 
-                    let name = format!("{}.{}", &fq_message_name, nested_type.name());
+                    let name = fq_message_name.join(nested_type.name());
                     Either::Right((name, (key, value)))
                 } else {
                     Either::Left((nested_type, idx))
@@ -246,12 +248,10 @@ impl CodeGenerator<'_> {
         self.depth += 1;
         self.path.push(2);
         for field in &fields {
+            let type_name = field.descriptor.type_name.as_ref();
             self.path.push(field.path_index);
-            match field
-                .descriptor
-                .type_name
-                .as_ref()
-                .and_then(|type_name| map_types.get(type_name))
+            match type_name
+                .and_then(|type_name| map_types.get(&FullyQualifiedName::from_type_name(type_name)))
             {
                 Some((key, value)) => self.append_map_field(&fq_message_name, field, key, value),
                 None => self.append_field(&fq_message_name, field),
@@ -302,7 +302,7 @@ impl CodeGenerator<'_> {
         }
     }
 
-    fn append_type_name(&mut self, message_name: &str, fq_message_name: &str) {
+    fn append_type_name(&mut self, message_name: &str, fq_message_name: &FullyQualifiedName) {
         self.buf.push_str(&format!(
             "impl {}::Name for {} {{\n",
             self.config.prost_path.as_deref().unwrap_or("::prost"),
@@ -322,33 +322,29 @@ impl CodeGenerator<'_> {
         let prost_path = self.config.prost_path.as_deref().unwrap_or("::prost");
         let string_path = format!("{prost_path}::alloc::string::String");
 
-        let full_name = format!(
-            "{}{}{}{}{message_name}",
-            self.package.trim_matches('.'),
-            if self.package.is_empty() { "" } else { "." },
-            self.type_path.join("."),
-            if self.type_path.is_empty() { "" } else { "." },
-        );
+        let full_name = FullyQualifiedName::new(&self.package, &self.type_path, message_name);
         let domain_name = self
             .config
             .type_name_domains
             .get_first(fq_message_name)
             .map_or("", |name| name.as_str());
 
+        let full_name_str = full_name.as_ref().trim_start_matches('.');
         self.buf.push_str(&format!(
-            r#"fn full_name() -> {string_path} {{ "{full_name}".into() }}"#,
+            r#"fn full_name() -> {string_path} {{ "{}".into() }}"#,
+            full_name_str,
         ));
 
         self.buf.push_str(&format!(
-            r#"fn type_url() -> {string_path} {{ "{domain_name}/{full_name}".into() }}"#,
+            r#"fn type_url() -> {string_path} {{ "{domain_name}/{}".into() }}"#,
+            full_name_str
         ));
 
         self.depth -= 1;
         self.buf.push_str("}\n");
     }
 
-    fn append_type_attributes(&mut self, fq_message_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+    fn append_type_attributes(&mut self, fq_message_name: &FullyQualifiedName) {
         for attribute in self.config.type_attributes.get(fq_message_name) {
             push_indent(self.buf, self.depth);
             self.buf.push_str(attribute);
@@ -356,8 +352,7 @@ impl CodeGenerator<'_> {
         }
     }
 
-    fn append_message_attributes(&mut self, fq_message_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+    fn append_message_attributes(&mut self, fq_message_name: &FullyQualifiedName) {
         for attribute in self.config.message_attributes.get(fq_message_name) {
             push_indent(self.buf, self.depth);
             self.buf.push_str(attribute);
@@ -365,12 +360,11 @@ impl CodeGenerator<'_> {
         }
     }
 
-    fn should_skip_debug(&self, fq_message_name: &str) -> bool {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+    fn should_skip_debug(&self, fq_message_name: &FullyQualifiedName) -> bool {
         self.config.skip_debug.get(fq_message_name).next().is_some()
     }
 
-    fn append_skip_debug(&mut self, fq_message_name: &str) {
+    fn append_skip_debug(&mut self, fq_message_name: &FullyQualifiedName) {
         if self.should_skip_debug(fq_message_name) {
             push_indent(self.buf, self.depth);
             self.buf.push_str("#[prost(skip_debug)]");
@@ -378,8 +372,7 @@ impl CodeGenerator<'_> {
         }
     }
 
-    fn append_enum_attributes(&mut self, fq_message_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+    fn append_enum_attributes(&mut self, fq_message_name: &FullyQualifiedName) {
         for attribute in self.config.enum_attributes.get(fq_message_name) {
             push_indent(self.buf, self.depth);
             self.buf.push_str(attribute);
@@ -387,8 +380,7 @@ impl CodeGenerator<'_> {
         }
     }
 
-    fn append_field_attributes(&mut self, fq_message_name: &str, field_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
+    fn append_field_attributes(&mut self, fq_message_name: &FullyQualifiedName, field_name: &str) {
         for attribute in self
             .config
             .field_attributes
@@ -400,7 +392,7 @@ impl CodeGenerator<'_> {
         }
     }
 
-    fn append_field(&mut self, fq_message_name: &str, field: &Field) {
+    fn append_field(&mut self, fq_message_name: &FullyQualifiedName, field: &Field) {
         let type_ = field.descriptor.r#type();
         let repeated = field.descriptor.label == Some(Label::Repeated as i32);
         let deprecated = self.deprecated(&field.descriptor);
@@ -527,7 +519,7 @@ impl CodeGenerator<'_> {
 
     fn append_map_field(
         &mut self,
-        fq_message_name: &str,
+        fq_message_name: &FullyQualifiedName,
         field: &Field,
         key: &FieldDescriptorProto,
         value: &FieldDescriptorProto,
@@ -575,7 +567,7 @@ impl CodeGenerator<'_> {
     fn append_oneof_field(
         &mut self,
         message_name: &str,
-        fq_message_name: &str,
+        fq_message_name: &FullyQualifiedName,
         oneof: &OneofField,
     ) {
         let type_name = format!(
@@ -603,14 +595,14 @@ impl CodeGenerator<'_> {
         ));
     }
 
-    fn append_oneof(&mut self, fq_message_name: &str, oneof: &OneofField) {
+    fn append_oneof(&mut self, fq_message_name: &FullyQualifiedName, oneof: &OneofField) {
         self.path.push(8);
         self.path.push(oneof.path_index);
         self.append_doc(fq_message_name, None);
         self.path.pop();
         self.path.pop();
 
-        let oneof_name = format!("{}.{}", fq_message_name, oneof.descriptor.name());
+        let oneof_name = fq_message_name.join(oneof.descriptor.name());
         self.append_type_attributes(&oneof_name);
         self.append_enum_attributes(&oneof_name);
         self.push_indent();
@@ -692,7 +684,7 @@ impl CodeGenerator<'_> {
         Some(&source_info.location[idx])
     }
 
-    fn append_doc(&mut self, fq_name: &str, field_name: Option<&str>) {
+    fn append_doc(&mut self, fq_name: &FullyQualifiedName, field_name: Option<&str>) {
         let append_doc = if let Some(field_name) = field_name {
             self.config
                 .disable_comments
@@ -715,7 +707,8 @@ impl CodeGenerator<'_> {
         let enum_name = to_upper_camel(proto_enum_name);
 
         let enum_values = &desc.value;
-        let fq_proto_enum_name = self.fq_name(proto_enum_name);
+        let fq_proto_enum_name =
+            FullyQualifiedName::new(&self.package, &self.type_path, proto_enum_name);
 
         if self
             .extern_paths
@@ -883,8 +876,10 @@ impl CodeGenerator<'_> {
                 let name = method.name.take().unwrap();
                 let input_proto_type = method.input_type.take().unwrap();
                 let output_proto_type = method.output_type.take().unwrap();
-                let input_type = self.resolve_ident(&input_proto_type);
-                let output_type = self.resolve_ident(&output_proto_type);
+                let input_type =
+                    self.resolve_ident(&FullyQualifiedName::from_type_name(&input_proto_type));
+                let output_type =
+                    self.resolve_ident(&FullyQualifiedName::from_type_name(&output_proto_type));
                 let client_streaming = method.client_streaming();
                 let server_streaming = method.server_streaming();
 
@@ -947,7 +942,11 @@ impl CodeGenerator<'_> {
         self.buf.push_str("}\n");
     }
 
-    fn resolve_type(&self, field: &FieldDescriptorProto, fq_message_name: &str) -> String {
+    fn resolve_type(
+        &self,
+        field: &FieldDescriptorProto,
+        fq_message_name: &FullyQualifiedName,
+    ) -> String {
         match field.r#type() {
             Type::Float => String::from("f32"),
             Type::Double => String::from("f64"),
@@ -965,14 +964,13 @@ impl CodeGenerator<'_> {
                 .unwrap_or_default()
                 .rust_type()
                 .to_owned(),
-            Type::Group | Type::Message => self.resolve_ident(field.type_name()),
+            Type::Group | Type::Message => {
+                self.resolve_ident(&FullyQualifiedName::from_type_name(field.type_name()))
+            }
         }
     }
 
-    fn resolve_ident(&self, pb_ident: &str) -> String {
-        // protoc should always give fully qualified identifiers.
-        assert_eq!(".", &pb_ident[..1]);
-
+    fn resolve_ident(&self, pb_ident: &FullyQualifiedName) -> String {
         if let Some(proto_ident) = self.extern_paths.resolve_ident(pb_ident) {
             return proto_ident;
         }
@@ -990,7 +988,7 @@ impl CodeGenerator<'_> {
             local_path.next();
         }
 
-        let mut ident_path = pb_ident[1..].split('.');
+        let mut ident_path = pb_ident.path_iterator();
         let ident_type = ident_path.next_back().unwrap();
         let mut ident_path = ident_path.peekable();
 
@@ -1028,7 +1026,7 @@ impl CodeGenerator<'_> {
             Type::Message => Cow::Borrowed("message"),
             Type::Enum => Cow::Owned(format!(
                 "enumeration={:?}",
-                self.resolve_ident(field.type_name())
+                self.resolve_ident(&FullyQualifiedName::from_type_name(field.type_name()))
             )),
         }
     }
@@ -1037,7 +1035,7 @@ impl CodeGenerator<'_> {
         match field.r#type() {
             Type::Enum => Cow::Owned(format!(
                 "enumeration({})",
-                self.resolve_ident(field.type_name())
+                self.resolve_ident(&FullyQualifiedName::from_type_name(field.type_name()))
             )),
             _ => self.field_type_tag(field),
         }
@@ -1066,7 +1064,7 @@ impl CodeGenerator<'_> {
     fn boxed(
         &self,
         field: &FieldDescriptorProto,
-        fq_message_name: &str,
+        fq_message_name: &FullyQualifiedName,
         oneof: Option<&str>,
     ) -> bool {
         let repeated = field.label == Some(Label::Repeated as i32);
@@ -1075,13 +1073,13 @@ impl CodeGenerator<'_> {
             && (fd_type == Type::Message || fd_type == Type::Group)
             && self
                 .message_graph
-                .is_nested(field.type_name(), fq_message_name)
+                .is_nested(field.type_name(), fq_message_name.as_ref())
         {
             return true;
         }
         let config_path = match oneof {
             None => Cow::Borrowed(fq_message_name),
-            Some(ooname) => Cow::Owned(format!("{fq_message_name}.{ooname}")),
+            Some(ooname) => Cow::Owned(fq_message_name.join(ooname)),
         };
         if self
             .config
@@ -1104,18 +1102,6 @@ impl CodeGenerator<'_> {
     /// Returns `true` if the field options includes the `deprecated` option.
     fn deprecated(&self, field: &FieldDescriptorProto) -> bool {
         field.options.as_ref().is_some_and(FieldOptions::deprecated)
-    }
-
-    /// Returns the fully-qualified name, starting with a dot
-    fn fq_name(&self, message_name: &str) -> String {
-        format!(
-            "{}{}{}{}.{}",
-            if self.package.is_empty() { "" } else { "." },
-            self.package.trim_matches('.'),
-            if self.type_path.is_empty() { "" } else { "." },
-            self.type_path.join("."),
-            message_name,
-        )
     }
 }
 

@@ -1102,8 +1102,13 @@ impl Config {
         let mut packages = HashMap::new();
 
         let message_graph = MessageGraph::new(requests.iter().map(|x| &x.1), self.boxed.clone());
-        let extern_paths = ExternPaths::new(&self.extern_paths, self.prost_types)
-            .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
+        let extern_paths = ExternPaths::new(
+            self.extern_paths
+                .iter()
+                .map(|(a, b)| (a.as_str(), b.as_str())),
+            self.prost_types,
+        )
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
 
         for (request_module, request_fd) in requests {
             // Only record packages that have services
