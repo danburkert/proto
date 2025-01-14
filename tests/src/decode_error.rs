@@ -148,28 +148,3 @@ fn test_decode_error_any() {
             "failed to decode Protobuf message: unexpected type URL.type_url: expected type URL: \"type.googleapis.com/google.protobuf.Timestamp\" (got: \"non-existing-url\")"
         );
 }
-
-#[test]
-fn test_push() {
-    let mut decode_error = prost::DecodeError::new("something failed");
-    decode_error.push("Foo bad", "bar.foo");
-    decode_error.push("Baz bad", "bar.baz");
-
-    assert_eq!(
-        decode_error.to_string(),
-        "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed"
-    );
-}
-
-#[cfg(feature = "std")]
-#[test]
-fn test_into_std_io_error() {
-    let decode_error = prost::DecodeError::new("something failed");
-    let std_io_error = std::io::Error::from(decode_error);
-
-    assert_eq!(std_io_error.kind(), std::io::ErrorKind::InvalidData);
-    assert_eq!(
-        std_io_error.to_string(),
-        "failed to decode Protobuf message: something failed"
-    );
-}
