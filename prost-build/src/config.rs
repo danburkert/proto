@@ -910,6 +910,7 @@ impl Config {
     ) -> Result<FileDescriptorSet> {
         let tmp;
         let file_descriptor_set_path = if let Some(path) = &self.file_descriptor_set_path {
+            println!("cargo:rerun-if-changed={}", path.display());
             path.clone()
         } else {
             if self.skip_protoc_run {
@@ -931,6 +932,7 @@ impl Config {
             cmd.arg("-o").arg(&file_descriptor_set_path);
 
             for include in includes {
+                println!("cargo:rerun-if-changed={}", include.as_ref().display());
                 if include.as_ref().exists() {
                     cmd.arg("-I").arg(include.as_ref());
                 } else {
@@ -952,6 +954,7 @@ impl Config {
             }
 
             for proto in protos {
+                println!("cargo:rerun-if-changed={}", proto.as_ref().display());
                 cmd.arg(proto.as_ref());
             }
 
@@ -1022,12 +1025,6 @@ impl Config {
         protos: &[impl AsRef<Path>],
         includes: &[impl AsRef<Path>],
     ) -> Result<()> {
-        // TODO: This should probably emit 'rerun-if-changed=PATH' directives for cargo, however
-        // according to [1] if any are output then those paths replace the default crate root,
-        // which is undesirable. Figure out how to do it in an additive way; perhaps gcc-rs has
-        // this figured out.
-        // [1]: http://doc.crates.io/build-script.html#outputs-of-the-build-script
-
         let file_descriptor_set = self.load_fds(protos, includes)?;
 
         self.compile_fds(file_descriptor_set)
@@ -1247,6 +1244,7 @@ pub fn error_message_protoc_not_found() -> String {
 
 /// Returns the path to the `protoc` binary.
 pub fn protoc_from_env() -> PathBuf {
+    println!("cargo:rerun-if-env-changed=PROTOC");
     env::var_os("PROTOC")
         .map(PathBuf::from)
         .unwrap_or(PathBuf::from("protoc"))
@@ -1254,6 +1252,7 @@ pub fn protoc_from_env() -> PathBuf {
 
 /// Returns the path to the Protobuf include directory.
 pub fn protoc_include_from_env() -> Option<PathBuf> {
+    println!("cargo:rerun-if-env-changed=PROTOC_INCLUDE");
     let protoc_include: PathBuf = env::var_os("PROTOC_INCLUDE")?.into();
 
     if !protoc_include.exists() {
