@@ -51,7 +51,7 @@ fn main() {
         .compile_protos(&[src.join("nesting.proto")], includes)
         .unwrap();
 
-    config
+    prost_build::Config::new()
         .compile_protos(&[src.join("recursive_oneof.proto")], includes)
         .unwrap();
 

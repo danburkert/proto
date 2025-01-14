@@ -72,6 +72,9 @@ mod default_enum_value;
 #[cfg(test)]
 mod nesting;
 
+#[cfg(test)]
+mod recursive_oneof;
+
 mod test_enum_named_option_value {
     include!(concat!(env!("OUT_DIR"), "/myenum.optionn.rs"));
 }
@@ -92,10 +95,6 @@ pub mod foo {
     pub mod bar_baz {
         include!(concat!(env!("OUT_DIR"), "/foo.bar_baz.rs"));
     }
-}
-
-pub mod recursive_oneof {
-    include!(concat!(env!("OUT_DIR"), "/recursive_oneof.rs"));
 }
 
 /// Also for testing custom attributes, but on oneofs.
@@ -389,29 +388,6 @@ mod tests {
     }
 
     #[test]
-    fn test_deep_nesting_oneof() {
-        fn build_and_roundtrip(depth: usize) -> Result<(), prost::DecodeError> {
-            use crate::recursive_oneof::{a, A, C};
-
-            let mut a = Box::new(A {
-                kind: Some(a::Kind::C(C {})),
-            });
-            for _ in 0..depth {
-                a = Box::new(A {
-                    kind: Some(a::Kind::A(a)),
-                });
-            }
-
-            let mut buf = Vec::new();
-            a.encode(&mut buf).unwrap();
-            A::decode(buf.as_slice()).map(|_| ())
-        }
-
-        assert!(build_and_roundtrip(99).is_ok());
-        assert!(build_and_roundtrip(100).is_err());
-    }
-
-    #[test]
     fn test_deep_nesting_group() {
         fn build_and_roundtrip(depth: usize) -> Result<(), prost::DecodeError> {
             use crate::groups::{nested_group2::OptionalGroup, NestedGroup2};
@@ -432,18 +408,6 @@ mod tests {
 
         assert!(build_and_roundtrip(50).is_ok());
         assert!(build_and_roundtrip(51).is_err());
-    }
-
-    #[test]
-    fn test_recursive_oneof() {
-        use crate::recursive_oneof::{a, A, B, C};
-        let _ = A {
-            kind: Some(a::Kind::B(Box::new(B {
-                a: Some(Box::new(A {
-                    kind: Some(a::Kind::C(C {})),
-                })),
-            }))),
-        };
     }
 
     #[test]
