@@ -121,6 +121,8 @@ pub mod default_string_escape {
     include!(concat!(env!("OUT_DIR"), "/default_string_escape.rs"));
 }
 
+use core::fmt::Debug;
+
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
@@ -227,7 +229,7 @@ where
 /// Generic roundtrip serialization check for messages.
 pub fn check_message<M>(msg: &M)
 where
-    M: Message + Default + PartialEq,
+    M: Debug + Message + Default + PartialEq,
 {
     let expected_len = msg.encoded_len();
 
