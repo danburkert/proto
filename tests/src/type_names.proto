@@ -9,3 +9,6 @@ message Foo {
 
 message Baz {
 }
+
+message Qux {
+}
