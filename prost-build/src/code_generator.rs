@@ -639,21 +639,21 @@ impl CodeGenerator<'_> {
 
             self.push_indent();
             let ty_tag = self.field_type_tag(&field.descriptor);
-            self.buf.push_str(&format!(
-                "#[prost({}, tag=\"{}\")]\n",
-                ty_tag,
-                field.descriptor.number()
-            ));
-            self.append_field_attributes(&oneof_name, field.descriptor.name());
-
-            self.push_indent();
-            let ty = self.resolve_type(&field.descriptor, fq_message_name);
-
             let boxed = self.boxed(
                 &field.descriptor,
                 fq_message_name,
                 Some(oneof.descriptor.name()),
             );
+            self.buf.push_str(&format!("#[prost({}", ty_tag));
+            if boxed {
+                self.buf.push_str(", boxed");
+            }
+            self.buf
+                .push_str(&format!(", tag=\"{}\")]\n", field.descriptor.number()));
+            self.append_field_attributes(&oneof_name, field.descriptor.name());
+
+            self.push_indent();
+            let ty = self.resolve_type(&field.descriptor, fq_message_name);
 
             debug!(
                 "    oneof: {:?}, type: {:?}, boxed: {}",

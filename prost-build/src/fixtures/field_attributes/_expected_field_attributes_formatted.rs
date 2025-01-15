@@ -8,7 +8,7 @@ pub struct Container {
 pub mod container {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Data {
-        #[prost(message, tag = "1")]
+        #[prost(message, boxed, tag = "1")]
         Foo(::prost::alloc::boxed::Box<super::Foo>),
         #[prost(message, tag = "2")]
         Bar(super::Bar),

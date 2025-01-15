@@ -4,6 +4,10 @@ package boxed_field;
 
 message Foo {
   Bar bar = 1;
+  oneof oneof_field {
+    string baz = 2;
+    Bar box_qux = 3;
+  }
 }
 
 message Bar {
