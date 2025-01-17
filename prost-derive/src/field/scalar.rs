@@ -40,7 +40,6 @@ impl Field {
                 unknown_attrs.push(attr);
             }
         }
-
         let ty = match ty {
             Some(ty) => ty,
             None => return Ok(None),
@@ -112,7 +111,10 @@ impl Field {
             Kind::Repeated => quote!(encode_repeated),
             Kind::Packed => quote!(encode_packed),
         };
-        let encode_fn = quote!(::prost::encoding::#module::#encode_fn);
+        let encode_fn = match self.ty {
+            Ty::Foreign(ref path) => quote!(#path::#encode_fn),
+            _ => quote!(::prost::encoding::#module::#encode_fn),
+        };
         let tag = self.tag;
 
         match self.kind {
@@ -143,7 +145,10 @@ impl Field {
             Kind::Plain(..) | Kind::Optional(..) | Kind::Required(..) => quote!(merge),
             Kind::Repeated | Kind::Packed => quote!(merge_repeated),
         };
-        let merge_fn = quote!(::prost::encoding::#module::#merge_fn);
+        let merge_fn = match self.ty {
+            Ty::Foreign(ref path) => quote!(#path::#merge_fn),
+            _ => quote!(::prost::encoding::#module::#merge_fn),
+        };
 
         match self.kind {
             Kind::Plain(..) | Kind::Required(..) | Kind::Repeated | Kind::Packed => quote! {
@@ -166,7 +171,11 @@ impl Field {
             Kind::Repeated => quote!(encoded_len_repeated),
             Kind::Packed => quote!(encoded_len_packed),
         };
-        let encoded_len_fn = quote!(::prost::encoding::#module::#encoded_len_fn);
+
+        let encoded_len_fn = match self.ty {
+            Ty::Foreign(ref path) => quote!(#path::#encoded_len_fn),
+            _ => quote!(::prost::encoding::#module::#encoded_len_fn),
+        };
         let tag = self.tag;
 
         match self.kind {
@@ -400,6 +409,7 @@ pub enum Ty {
     String,
     Bytes(BytesTy),
     Enumeration(Path),
+    Foreign(Path),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -443,6 +453,7 @@ impl Ty {
             Meta::Path(ref name) if name.is_ident("bool") => Ty::Bool,
             Meta::Path(ref name) if name.is_ident("string") => Ty::String,
             Meta::Path(ref name) if name.is_ident("bytes") => Ty::Bytes(BytesTy::Vec),
+            Meta::Path(ref name) if name.leading_colon.is_some() => Ty::Foreign(name.clone()),
             Meta::NameValue(MetaNameValue {
                 ref path,
                 value:
@@ -525,6 +536,7 @@ impl Ty {
             Ty::String => "string",
             Ty::Bytes(..) => "bytes",
             Ty::Enumeration(..) => "enum",
+            Ty::Foreign(..) => "asdfasdf",
         }
     }
 
@@ -556,6 +568,7 @@ impl Ty {
             Ty::String => quote!(&str),
             Ty::Bytes(..) => quote!(&[u8]),
             Ty::Enumeration(..) => quote!(i32),
+            Ty::Foreign(ref path) => quote!(#path),
         }
     }
 
@@ -612,6 +625,7 @@ pub enum DefaultValue {
     String(String),
     Bytes(Vec<u8>),
     Enumeration(TokenStream),
+    Foreign(TokenStream),
     Path(Path),
 }
 
@@ -771,11 +785,11 @@ impl DefaultValue {
             Ty::Int64 | Ty::Sint64 | Ty::Sfixed64 => DefaultValue::I64(0),
             Ty::Uint32 | Ty::Fixed32 => DefaultValue::U32(0),
             Ty::Uint64 | Ty::Fixed64 => DefaultValue::U64(0),
-
             Ty::Bool => DefaultValue::Bool(false),
             Ty::String => DefaultValue::String(String::new()),
             Ty::Bytes(..) => DefaultValue::Bytes(Vec::new()),
             Ty::Enumeration(ref path) => DefaultValue::Enumeration(quote!(#path::default())),
+            Ty::Foreign(ref path) => DefaultValue::Foreign(quote!(#path::default())),
         }
     }
 
@@ -792,6 +806,7 @@ impl DefaultValue {
                 let lit = LitByteStr::new(value, Span::call_site());
                 quote!(#lit.as_ref().into())
             }
+            DefaultValue::Foreign(ref path) => quote!(#path),
 
             ref other => other.typed(),
         }
@@ -822,6 +837,7 @@ impl ToTokens for DefaultValue {
                 tokens.append_all(quote!(#byte_str as &[u8]));
             }
             DefaultValue::Enumeration(ref value) => value.to_tokens(tokens),
+            DefaultValue::Foreign(ref value) => value.to_tokens(tokens),
             DefaultValue::Path(ref value) => value.to_tokens(tokens),
         }
     }
