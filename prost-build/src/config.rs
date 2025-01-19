@@ -15,6 +15,7 @@ use prost::Message;
 use prost_types::{FileDescriptorProto, FileDescriptorSet};
 
 use crate::code_generator::CodeGenerator;
+use crate::context::Context;
 use crate::extern_paths::ExternPaths;
 use crate::message_graph::MessageGraph;
 use crate::path::PathMap;
@@ -1101,9 +1102,10 @@ impl Config {
         let mut modules = HashMap::new();
         let mut packages = HashMap::new();
 
-        let message_graph = MessageGraph::new(requests.iter().map(|x| &x.1), self.boxed.clone());
+        let message_graph = MessageGraph::new(requests.iter().map(|x| &x.1));
         let extern_paths = ExternPaths::new(&self.extern_paths, self.prost_types)
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error))?;
+        let mut context = Context::new(self, message_graph, extern_paths);
 
         for (request_module, request_fd) in requests {
             // Only record packages that have services
@@ -1113,14 +1115,14 @@ impl Config {
             let buf = modules
                 .entry(request_module.clone())
                 .or_insert_with(String::new);
-            CodeGenerator::generate(self, &message_graph, &extern_paths, request_fd, buf);
+            CodeGenerator::generate(&mut context, request_fd, buf);
             if buf.is_empty() {
                 // Did not generate any code, remove from list to avoid inclusion in include file or output file list
                 modules.remove(&request_module);
             }
         }
 
-        if let Some(ref mut service_generator) = self.service_generator {
+        if let Some(service_generator) = context.service_generator_mut() {
             for (module, package) in packages {
                 let buf = modules.get_mut(&module).unwrap();
                 service_generator.finalize_package(&package, buf);

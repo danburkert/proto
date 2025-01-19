@@ -6,10 +6,8 @@ use petgraph::Graph;
 
 use prost_types::{
     field_descriptor_proto::{Label, Type},
-    DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+    DescriptorProto, FileDescriptorProto,
 };
-
-use crate::path::PathMap;
 
 /// `MessageGraph` builds a graph of messages whose edges correspond to nesting.
 /// The goal is to recognize when message types are recursively nested, so
@@ -18,19 +16,14 @@ pub struct MessageGraph {
     index: HashMap<String, NodeIndex>,
     graph: Graph<String, ()>,
     messages: HashMap<String, DescriptorProto>,
-    boxed: PathMap<()>,
 }
 
 impl MessageGraph {
-    pub(crate) fn new<'a>(
-        files: impl Iterator<Item = &'a FileDescriptorProto>,
-        boxed: PathMap<()>,
-    ) -> MessageGraph {
+    pub(crate) fn new<'a>(files: impl Iterator<Item = &'a FileDescriptorProto>) -> MessageGraph {
         let mut msg_graph = MessageGraph {
             index: HashMap::new(),
             graph: Graph::new(),
             messages: HashMap::new(),
-            boxed,
         };
 
         for file in files {
@@ -98,59 +91,5 @@ impl MessageGraph {
         };
 
         has_path_connecting(&self.graph, outer, inner, None)
-    }
-
-    /// Returns `true` if this message can automatically derive Copy trait.
-    pub fn can_message_derive_copy(&self, fq_message_name: &str) -> bool {
-        assert_eq!(".", &fq_message_name[..1]);
-        self.get_message(fq_message_name)
-            .unwrap()
-            .field
-            .iter()
-            .all(|field| self.can_field_derive_copy(fq_message_name, field))
-    }
-
-    /// Returns `true` if the type of this field allows deriving the Copy trait.
-    pub fn can_field_derive_copy(
-        &self,
-        fq_message_name: &str,
-        field: &FieldDescriptorProto,
-    ) -> bool {
-        assert_eq!(".", &fq_message_name[..1]);
-
-        // repeated field cannot derive Copy
-        if field.label() == Label::Repeated {
-            false
-        } else if field.r#type() == Type::Message {
-            // nested and boxed messages cannot derive Copy
-            if self.is_nested(field.type_name(), fq_message_name)
-                || self
-                    .boxed
-                    .get_first_field(fq_message_name, field.name())
-                    .is_some()
-            {
-                false
-            } else {
-                self.can_message_derive_copy(field.type_name())
-            }
-        } else {
-            matches!(
-                field.r#type(),
-                Type::Float
-                    | Type::Double
-                    | Type::Int32
-                    | Type::Int64
-                    | Type::Uint32
-                    | Type::Uint64
-                    | Type::Sint32
-                    | Type::Sint64
-                    | Type::Fixed32
-                    | Type::Fixed64
-                    | Type::Sfixed32
-                    | Type::Sfixed64
-                    | Type::Bool
-                    | Type::Enum
-            )
-        }
     }
 }
