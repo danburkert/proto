@@ -5,7 +5,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse_str, Expr, ExprLit, Ident, Index, Lit, LitByteStr, Meta, MetaNameValue, Path};
 
-use crate::field::{bool_attr, set_option, tag_attr, Label};
+use crate::field::{bool_attr, set_option, tag_attr, Label, MAX_KEY_LEN};
 
 /// A scalar protobuf field.
 #[derive(Clone)]
@@ -186,6 +186,15 @@ impl Field {
             Kind::Required(..) | Kind::Repeated | Kind::Packed => quote! {
                 #encoded_len_fn(#tag, &#ident)
             },
+        }
+    }
+
+    pub fn encoded_len_limit(&self) -> Option<usize> {
+        match &self.kind {
+            Kind::Plain(_) | Kind::Optional(_) | Kind::Required(_) => {
+                self.ty.encoded_len_limit().map(|limit| MAX_KEY_LEN + limit)
+            }
+            Kind::Repeated | Kind::Packed => None,
         }
     }
 
@@ -569,6 +578,23 @@ impl Ty {
     /// Returns false if the scalar type is length delimited (i.e., `string` or `bytes`).
     pub fn is_numeric(&self) -> bool {
         !matches!(self, Ty::String | Ty::Bytes(..))
+    }
+
+    pub fn encoded_len_limit(&self) -> Option<usize> {
+        match self {
+            Ty::Bool => Some(1),
+            // varint64
+            Ty::Int32 | Ty::Int64 | Ty::Uint64 | Ty::Sint64 | Ty::Enumeration(..) => Some(10),
+            // varint32
+            Ty::Uint32 | Ty::Sint32 => Some(5),
+            // fixed32
+            Ty::Fixed32 | Ty::Sfixed32 | Ty::Float => Some(4),
+            // fixed64
+            Ty::Fixed64 | Ty::Sfixed64 | Ty::Double => Some(8),
+            // length delimited
+            Ty::String => None,
+            Ty::Bytes(..) => None,
+        }
     }
 }
 

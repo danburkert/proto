@@ -6,7 +6,7 @@ extern crate alloc;
 extern crate proc_macro;
 
 use anyhow::{bail, Error};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
@@ -103,9 +103,25 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
         )
     };
 
-    let encoded_len = fields
+    // For encoded_len, split the fields into those that have a known length limit
+    // and those that don't. The sum of the known lengths should not overflow usize.
+    // For purposes of testing, we want both lists to be in declaration order.
+    let mut total_limit = 0usize;
+    let (encoded_len_limited, encoded_len_unlimited): (Vec<_>, Vec<_>) = unsorted_fields
         .iter()
-        .map(|(field_ident, field)| field.encoded_len(quote!(self.#field_ident)));
+        .partition_map(move |(field_ident, field)| {
+            let encoded_len_expr = field.encoded_len(quote!(self.#field_ident));
+            match field
+                .encoded_len_limit()
+                .and_then(|limit| total_limit.checked_add(limit))
+            {
+                Some(sum) => {
+                    total_limit = sum;
+                    Either::Left(encoded_len_expr)
+                }
+                None => Either::Right(encoded_len_expr),
+            }
+        });
 
     let encode = fields
         .iter()
@@ -196,8 +212,12 @@ fn try_message(input: TokenStream) -> Result<TokenStream, Error> {
             }
 
             #[inline]
+            #[allow(unused_mut)]
             fn encoded_len(&self) -> usize {
-                0 #(+ #encoded_len)*
+                let mut acc = 0usize #(+ #encoded_len_limited)*;
+                #(acc = acc.checked_add(#encoded_len_unlimited)
+                    .expect("encoded length overflows usize");)*
+                acc
             }
 
             fn clear(&mut self) {

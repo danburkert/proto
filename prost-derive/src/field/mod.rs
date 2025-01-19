@@ -13,6 +13,10 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::{Attribute, Expr, ExprLit, Lit, LitBool, LitInt, Meta, MetaNameValue, Token};
 
+// Maximum possible length of an encoded field key.
+// Verified by the max_key_len test in prost.
+const MAX_KEY_LEN: usize = 5;
+
 #[derive(Clone)]
 pub enum Field {
     /// A scalar field.
@@ -119,6 +123,24 @@ impl Field {
             Field::Message(ref msg) => msg.encoded_len(ident),
             Field::Oneof(ref oneof) => oneof.encoded_len(ident),
             Field::Group(ref group) => group.encoded_len(ident),
+        }
+    }
+
+    /// Returns the upper bound on the encoded length of the field
+    /// when it is known statically.
+    pub fn encoded_len_limit(&self) -> Option<usize> {
+        match self {
+            Field::Scalar(scalar) => scalar.encoded_len_limit(),
+            Field::Map(_) => None,
+            Field::Message(_) | Field::Oneof(_) | Field::Group(_) => {
+                // A limit could be determined when the field is singular,
+                // all its constituent fields are also singular and have a known
+                // limit on the encoded length.
+                // But there is no way to know this in the derive macro,
+                // and we should not trust the invoker to set it correctly with
+                // e.g. a field attribute.
+                None
+            }
         }
     }
 

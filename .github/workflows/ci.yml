@@ -152,6 +152,37 @@ jobs:
       - name: test no-default-features
         run: cargo test -p prost-build -p prost-derive -p prost-types --no-default-features
 
+  tests-overflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - name: install multilib support for GCC
+        run: sudo apt-get install -y gcc-multilib
+      - name: install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc@${{ env.PROTOC_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+      - name: test for integer overflows
+        run: |
+          cargo test -p tests-overflow --target i686-unknown-linux-gnu -- \
+            --skip encoded_len::overflow::field::int32::encoded_len_packed_can_overflow_u32 \
+            --skip encoded_len::overflow::field::int32::encoded_len_repeated_can_overflow_u32 \
+            --include-ignored --test-threads 1
+      - name: run tests with large allocations in isolation
+        run: |
+          for test in \
+            encoded_len::overflow::field::int32::encoded_len_packed_can_overflow_u32 \
+            encoded_len::overflow::field::int32::encoded_len_repeated_can_overflow_u32 \
+            ;
+          do
+            cargo test -p tests-overflow --target i686-unknown-linux-gnu -- \
+              --ignored --exact $test
+          done
+
   msrv:
     runs-on: ubuntu-latest
     steps:

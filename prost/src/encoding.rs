@@ -278,10 +278,10 @@ macro_rules! varint {
                 if values.is_empty() { return; }
 
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let len: usize = values.iter().map(|$to_uint64_value| {
-                    encoded_len_varint($to_uint64)
+                let len = values.iter().map(|$to_uint64_value| {
+                    encoded_len_varint($to_uint64) as u64
                 }).sum();
-                encode_varint(len as u64, buf);
+                encode_varint(len, buf);
 
                 for $to_uint64_value in values {
                     encode_varint($to_uint64, buf);
@@ -297,9 +297,14 @@ macro_rules! varint {
 
             #[inline]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-                key_len(tag) * values.len() + values.iter().map(|$to_uint64_value| {
-                    encoded_len_varint($to_uint64)
-                }).sum::<usize>()
+                let len = key_len(tag) as u64 * values.len() as u64
+                    + values
+                        .iter()
+                        .map(|$to_uint64_value| {
+                            encoded_len_varint($to_uint64) as u64
+                        })
+                        .sum::<u64>();
+                len.try_into().expect("encoded length overflows usize")
             }
 
             #[inline]
@@ -308,9 +313,10 @@ macro_rules! varint {
                     0
                 } else {
                     let len = values.iter()
-                                    .map(|$to_uint64_value| encoded_len_varint($to_uint64))
-                                    .sum::<usize>();
-                    key_len(tag) + encoded_len_varint(len as u64) + len
+                        .map(|$to_uint64_value| encoded_len_varint($to_uint64) as u64)
+                        .sum();
+                    ((key_len(tag) + encoded_len_varint(len)) as u64 + len)
+                        .try_into().expect("encoded length overflows usize")
                 }
             }
 
@@ -344,8 +350,7 @@ macro_rules! varint {
                     }
                 }
             }
-         }
-
+        }
     );
 }
 varint!(bool, bool,
@@ -411,7 +416,7 @@ macro_rules! fixed_width {
 
                 encode_key(tag, WireType::LengthDelimited, buf);
                 let len = values.len() as u64 * $width;
-                encode_varint(len as u64, buf);
+                encode_varint(len, buf);
 
                 for value in values {
                     buf.$put(*value);
@@ -427,7 +432,9 @@ macro_rules! fixed_width {
 
             #[inline]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-                (key_len(tag) + $width) * values.len()
+                (key_len(tag) + $width)
+                    .checked_mul(values.len())
+                    .expect("encoded length overflows usize")
             }
 
             #[inline]
@@ -435,6 +442,9 @@ macro_rules! fixed_width {
                 if values.is_empty() {
                     0
                 } else {
+                    // The encoded width of the values is the same as the in-memory size,
+                    // and a valid slice must fit in the available memory with room to spare.
+                    // So this cannot overflow.
                     let len = $width * values.len();
                     key_len(tag) + encoded_len_varint(len as u64) + len
                 }
@@ -519,6 +529,14 @@ fixed_width!(
     get_i64_le
 );
 
+// This checks that the overhead of the repeated field tag is not larger
+// than the in-memory size of a value. As the valid slice must fit in the
+// addressable memory, multiplying the encoded tag length by the number of
+// elements in the slice cannot overflow.
+fn key_len_fits_in_size_of_elem<T>(tag: u32, _: &[T]) -> bool {
+    key_len(tag) <= mem::size_of::<T>()
+}
+
 /// Macro which emits encoding functions for a length-delimited type.
 macro_rules! length_delimited {
     ($ty:ty) => {
@@ -544,11 +562,15 @@ macro_rules! length_delimited {
 
         #[inline]
         pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-            key_len(tag) * values.len()
+            // Summation in the u64 domain is not feasible to overflow because
+            // that would require data allocations on the order of `u64::MAX / 10` or more.
+            debug_assert!(key_len_fits_in_size_of_elem(tag, values));
+            let len = (key_len(tag) * values.len()) as u64
                 + values
                     .iter()
-                    .map(|value| encoded_len_varint(value.len() as u64) + value.len())
-                    .sum::<usize>()
+                    .map(|value| (encoded_len_varint(value.len() as u64) + value.len()) as u64)
+                    .sum::<u64>();
+            len.try_into().expect("encoded length overflows usize")
         }
     };
 }
@@ -847,7 +869,9 @@ pub mod message {
         M: Message,
     {
         let len = msg.encoded_len();
-        key_len(tag) + encoded_len_varint(len as u64) + len
+        (key_len(tag) + encoded_len_varint(len as u64))
+            .checked_add(len)
+            .expect("encoded length overflows usize")
     }
 
     #[inline]
@@ -855,12 +879,24 @@ pub mod message {
     where
         M: Message,
     {
-        key_len(tag) * messages.len()
-            + messages
-                .iter()
-                .map(Message::encoded_len)
-                .map(|len| len + encoded_len_varint(len as u64))
-                .sum::<usize>()
+        // With zero-sized structs, it is possible to try to cause an integer overflow
+        // at no memory cost by supplying an impossibly long slice.
+        // As encoded_len for empty messages is constant, a savvy optimizer can convert
+        // the summation loop into a multiplication, making this computationally feasible
+        // even in the u64 domain.
+        // Individual messages can provide such amplification bombs in their own fields,
+        // so summing their encoded lengths should be checked for overflow as well.
+        let acc = key_len(tag)
+            .checked_mul(messages.len())
+            .expect("encoded length overflows usize");
+        messages
+            .iter()
+            .map(Message::encoded_len)
+            .try_fold(acc, |acc, len| {
+                acc.checked_add(encoded_len_varint(len as u64))
+                    .and_then(|acc| acc.checked_add(len))
+            })
+            .expect("encoded length overflows usize")
     }
 }
 
@@ -933,7 +969,9 @@ pub mod group {
     where
         M: Message,
     {
-        2 * key_len(tag) + msg.encoded_len()
+        (2 * key_len(tag))
+            .checked_add(msg.encoded_len())
+            .expect("encoded length overflows usize")
     }
 
     #[inline]
@@ -941,7 +979,16 @@ pub mod group {
     where
         M: Message,
     {
-        2 * key_len(tag) * messages.len() + messages.iter().map(Message::encoded_len).sum::<usize>()
+        // Same considerations regarding overflow safety apply
+        // as in message::encoded_len_repeated.
+        let acc = (2 * key_len(tag))
+            .checked_mul(messages.len())
+            .expect("encoded length overflows usize");
+        messages
+            .iter()
+            .map(Message::encoded_len)
+            .try_fold(acc, |acc, len| acc.checked_add(len))
+            .expect("encoded length overflows usize")
     }
 }
 
@@ -1043,7 +1090,8 @@ macro_rules! map {
                 let skip_val = val == val_default;
 
                 let len = (if skip_key { 0 } else { key_encoded_len(1, key) })
-                    + (if skip_val { 0 } else { val_encoded_len(2, val) });
+                    .checked_add(if skip_val { 0 } else { val_encoded_len(2, val) })
+                    .expect("encoded length overflows usize");
 
                 encode_key(tag, WireType::LengthDelimited, buf);
                 encode_varint(len as u64, buf);
@@ -1112,22 +1160,26 @@ macro_rules! map {
             KL: Fn(u32, &K) -> usize,
             VL: Fn(u32, &V) -> usize,
         {
-            key_len(tag) * values.len()
-                + values
-                    .iter()
-                    .map(|(key, val)| {
-                        let len = (if key == &K::default() {
-                            0
-                        } else {
-                            key_encoded_len(1, key)
-                        }) + (if val == val_default {
-                            0
-                        } else {
-                            val_encoded_len(2, val)
-                        });
-                        encoded_len_varint(len as u64) + len
+            let acc = key_len(tag)
+                .checked_mul(values.len())
+                .expect("encoded length overflows usize");
+            values
+                .iter()
+                .try_fold(acc, |acc, (key, val)| {
+                    if key == &K::default() {
+                        0
+                    } else {
+                        key_encoded_len(1, key)
+                    }
+                    .checked_add(if val == val_default {
+                        0
+                    } else {
+                        val_encoded_len(2, val)
                     })
-                    .sum::<usize>()
+                    .and_then(|len| encoded_len_varint(len as u64).checked_add(len))
+                    .and_then(|len| acc.checked_add(len))
+                })
+                .expect("encoded length overflows usize")
         }
     };
 }
@@ -1305,6 +1357,11 @@ mod test {
         prop_assert_eq!(value, roundtrip_value);
 
         Ok(())
+    }
+
+    #[test]
+    fn max_key_len() {
+        assert_eq!(key_len(MAX_TAG), 5);
     }
 
     #[test]

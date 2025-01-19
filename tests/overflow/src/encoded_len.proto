@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package encoded_len;
+
+message Testbed {
+    // This is put before any other unlimited-length fields so that we can
+    // use it as zero-allocation padding to cheaply test overflow-checked length
+    // computations which occur in the declaration order.
+    // However, this field should be accounted after all scalar numeric fields
+    // for which encoded lengths are added unchecked, so we put it ahead of 
+    // those fields as well to verify that this ordering occurs.
+    repeated Empty repeated_empty = 536870911; // MAX_TAG
+
+    int32 int32 = 1;
+    int64 int64 = 2;
+    uint32 uint32 = 3;
+    uint64 uint64 = 4;
+    sint32 sint32 = 5;
+    sint64 sint64 = 6;
+    fixed32 fixed32 = 7;
+    fixed64 fixed64 = 8;
+    sfixed32 sfixed32 = 9;
+    sfixed64 sfixed64 = 10;
+    float float = 11;
+    double double = 12;
+    bool bool = 13;
+    BadEnum enumeration = 14;
+
+    // Let all tags of the length-delimited fields encode in 2 bytes.
+    string string = 16;
+    bytes bytes = 17;
+    repeated int32 packed_int32 = 18;
+    map<uint32, int32> map = 19;
+}
+
+message TwoUnlimited {
+    repeated Empty repeated_empty = 536870911; // MAX_TAG
+    string string = 16;
+}
+
+message Empty {}
+
+enum BadEnum {
+    UNKNOWN = 0;
+    LONG = -1;
+}

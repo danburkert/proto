@@ -1,0 +1,21 @@
+[package]
+name = "tests-overflow"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+authors.workspace = true
+
+[features]
+default = ["std"]
+std = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("edition-2015"))'] }
+
+[dependencies]
+cfg-if = "1"
+prost = { path = "../../prost" }
+
+[build-dependencies]
+env_logger = { version = "0.11", default-features = false }
+prost-build = { path = "../../prost-build" }
